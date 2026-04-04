@@ -39,28 +39,36 @@ def load_docs_node(state: State) -> State:
         loader = UniversityDocumentLoader(state["path_to_docs"])
         docs = loader.load_all_documents()
         logger.info(f"Loaded {len(docs)} documents from {state['path_to_docs']}")
+    #     return {
+    #         "raw_docs": docs,
+    #     }
+    # except Exception as e:
+    #     logger.error(f"Error occurred while loading documents: {e}")
+    #     return {
+    #         "raw_docs": [],
+    #     }
         return {
-            "raw_docs": docs,
+            "split_docs": docs, 
         }
     except Exception as e:
         logger.error(f"Error occurred while loading documents: {e}")
         return {
-            "raw_docs": [],
-        }
-
-def split_docs_node(state: State) -> State:
-    try: 
-        splitter = create_splitter(chunk_size=state["chunk_size"], chunk_overlap=state["chunk_overlap"])
-        split_docs = splitter.split_documents(state["raw_docs"])
-        logger.info(f"Split documents into {len(split_docs)} chunks")
-        return {
-            "split_docs": split_docs,
-        }
-    except Exception as e:
-        logger.error(f"Error occurred while splitting documents: {e}")
-        return {
             "split_docs": [],
         }
+
+# def split_docs_node(state: State) -> State:
+#     try: 
+#         splitter = create_splitter(chunk_size=state["chunk_size"], chunk_overlap=state["chunk_overlap"])
+#         split_docs = splitter.split_documents(state["raw_docs"])
+#         logger.info(f"Split documents into {len(split_docs)} chunks")
+#         return {
+#             "split_docs": split_docs,
+#         }
+#     except Exception as e:
+#         logger.error(f"Error occurred while splitting documents: {e}")
+#         return {
+#             "split_docs": [],
+#         }
     
 
 def vector_store_retriever_node(state: State) -> State:

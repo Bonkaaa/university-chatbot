@@ -17,7 +17,7 @@ logger = setup_logger("agent_graph.log", "agent_graph")
 from .agent import (
     State,
     load_docs_node,
-    split_docs_node,
+    # split_docs_node,
     vector_store_retriever_node,
     multi_query_node,
     generate_answer_node,
@@ -29,7 +29,7 @@ def create_agent_graph() -> StateGraph:
 
     # Define the nodes in the graph
     graph.add_node("load_docs", load_docs_node)
-    graph.add_node("split_docs", split_docs_node)
+    # graph.add_node("split_docs", split_docs_node)
     graph.add_node("vector_store_retriever", vector_store_retriever_node)
     graph.add_node("multi_query", multi_query_node)
     graph.add_node("retrieve_with_rrf", retrieve_with_rrf_node)
@@ -39,8 +39,10 @@ def create_agent_graph() -> StateGraph:
     graph.add_edge(START, "load_docs")
 
 
-    graph.add_edge("load_docs", "split_docs")
-    graph.add_edge("split_docs", "vector_store_retriever")
+    # graph.add_edge("load_docs", "split_docs")
+    # graph.add_edge("split_docs", "vector_store_retriever")
+    
+    graph.add_edge("load_docs", "vector_store_retriever")
     graph.add_edge("vector_store_retriever", "multi_query")
 
     graph.add_edge("multi_query", "retrieve_with_rrf")
