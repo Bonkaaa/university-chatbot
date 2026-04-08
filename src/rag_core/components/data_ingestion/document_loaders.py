@@ -96,8 +96,9 @@ def process_and_chunk_hust_documents(docs: List[Document]) -> List[Document]:
 
 
 class UniversityDocumentLoader:
-    def __init__(self, file_path: str):
+    def __init__(self, file_path: str, file_cache_path: str = "data/processed_documents"):
         self.file_path = file_path
+        self.file_cache_path = file_cache_path
 
     def load_file(self, file_path: str) -> List[Document]:
         if not os.path.exists(file_path):
@@ -136,6 +137,7 @@ class UniversityDocumentLoader:
         
     def load_all_documents(self) -> List[Document]:
         all_documents = []
+        name = []
 
         if not os.path.exists(self.file_path):
             logger.error(f"File path does not exist: {self.file_path}")
@@ -145,6 +147,7 @@ class UniversityDocumentLoader:
         for file_name in os.listdir(self.file_path):
             file_path = os.path.join(self.file_path, file_name)
             if os.path.isfile(file_path):
+                name.append(file_name)
                 # Load từng file (docs lúc này đang bị chia theo TRANG)
                 raw_docs = self.load_file(file_path)
                 
@@ -156,19 +159,22 @@ class UniversityDocumentLoader:
                     # Các file khác giữ nguyên hoặc dùng RecursiveCharacterTextSplitter cơ bản
                     all_documents.extend(raw_docs)
 
-        return all_documents
+        return all_documents, name
 
 if __name__ == "__main__":
     # Example usage
     loader = UniversityDocumentLoader("data/raw_documents")
-    documents = loader.load_all_documents()
+    documents, file_names = loader.load_all_documents()
     print(f"Đã tạo ra {len(documents)} semantic chunks.")
-    
+    print(f"File names: {file_names}")
+
     # write the documents to a file for testing
-    with open("loaded_documents.txt", "w", encoding="utf-8") as f:
-        for doc in documents:
-            f.write(f"--- METADATA ---\n{doc.metadata}\n\n")
-            f.write(f"--- CONTENT ---\n{doc.page_content}\n")
-            f.write("="*50 + "\n\n")
+    for file_name in file_names:
+        with open(f"processed_{file_name}.txt", "w", encoding="utf-8") as f:
+            for doc in documents:
+                if doc.metadata.get("source", "").endswith(file_name):
+                    f.write(f"--- METADATA ---\n{doc.metadata}\n\n")
+                    f.write(f"--- CONTENT ---\n{doc.page_content}\n")
+                    f.write("="*50 + "\n\n")
 
         

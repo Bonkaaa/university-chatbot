@@ -2,7 +2,7 @@ from langgraph.graph import add_messages
 from langchain_core.messages import HumanMessage, AIMessage, AnyMessage
 from langchain_core.documents import Document
 
-from typing_extensions import TypedDict, Annotated, Any, List
+from typing_extensions import TypedDict, Annotated, Any, List, Dict
 import json
 
 from ..rag_core import setup_logger
@@ -28,9 +28,9 @@ class State(TypedDict):
 
     raw_docs: List[Document]
     split_docs: List[Document]
-    retrieved_docs: str
+    retrieved_docs: List[Document]
 
-    final_answer: str
+    final_answer: Dict[str, Any]
 
 logger = setup_logger("agent.log", "agent")
 
@@ -168,6 +168,24 @@ def retrieve_with_retriever_node(state: State) -> State:
         }
 
 def generate_answer_node(state: State) -> State:
+    user_message = f"""
+    Question from user: {state['query']}
+    Retrieved documents: {state['retrieved_docs']}
+    """
+
+    human_message = HumanMessage(content=user_message)
+
+    new_messages = [human_message]
+
+    # If no documents were retrieved, we can skip calling the answer generation agent and return a default response
+    if not state["retrieved_docs"] or len(state["retrieved_docs"]) == 0:
+        ai_message = AIMessage(content="Xin lỗi, tôi không tìm thấy thông tin liên quan đến câu hỏi của bạn.")
+        new_messages.append(ai_message)
+        return {
+            "final_answer": "Xin lỗi, tôi không tìm thấy thông tin liên quan đến câu hỏi của bạn.",
+            "messages": new_messages,
+        }
+
     try:
         answer_agent = generate_answer_agent(
             model_name=state["main_model"],
@@ -180,14 +198,30 @@ def generate_answer_node(state: State) -> State:
         }
 
         response = answer_agent.invoke(agent_input)
-        logger.info(f"Answer: {response}")
+
+        response_dict = {
+            "answer": response.answer,
+            "confidence": response.confidence,
+            "follow_up_question": response.follow_up_question,
+            "intent": response.intent,
+            "sources": [doc.metadata.get("source", "unknown") for doc in state["retrieved_docs"]],
+        }
+
+        logger.info(f"Answer: {response_dict}")
+
+        ai_message = AIMessage(content=response.answer)
+
+        new_messages.append(ai_message)
+
         return {
-            "final_answer": response,
+            "final_answer": response_dict,
+            "messages": new_messages,
         }
     except Exception as e:
         logger.error(f"Error occurred while generating answer: {e}")
         return {
-            "final_answer": "",
+            "final_answer": {"answer": "Xin lỗi, đã xảy ra lỗi khi tạo câu trả lời."},
+            "messages": new_messages,
         }
 
 
