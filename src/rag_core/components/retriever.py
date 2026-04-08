@@ -54,7 +54,7 @@ if __name__ == "__main__":
 
     retriever = create_retriever(
         docs=split_docs,
-        embed_model="mxbai-embed-large",
+        embed_model="hf.co/CompendiumLabs/bge-m3-gguf",
     )
 
     # query = "Điều kiện để được xét công nhận tốt nghiệp đại học là gì?"
