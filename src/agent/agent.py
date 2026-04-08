@@ -6,7 +6,7 @@ from typing_extensions import TypedDict, Annotated, Any, List
 import json
 
 from ..rag_core import setup_logger
-from ..rag_core import UniversityDocumentLoader, create_splitter, create_retriever, generate_answer_agent, retrieve_with_rrf, get_multi_query_agent
+from ..rag_core import UniversityDocumentLoader, create_splitter, create_retriever, generate_answer_agent
 
 class State(TypedDict):
     messages: Annotated[List[AnyMessage], add_messages]
@@ -40,12 +40,12 @@ def load_docs_node(state: State) -> State:
         docs = loader.load_all_documents()
         logger.info(f"Loaded {len(docs)} documents from {state['path_to_docs']}")
         return {
-            "raw_docs": docs,
+            "split_docs": docs,
         }
     except Exception as e:
         logger.error(f"Error occurred while loading documents: {e}")
         return {
-            "raw_docs": [],
+            "split_docs": [],
         }
 
 def split_docs_node(state: State) -> State:
@@ -94,62 +94,75 @@ def vector_store_retriever_node(state: State) -> State:
 #             "llm": None,
 #         }
 
-def multi_query_node(state: State) -> State:
-    multi_query_agent = get_multi_query_agent(state["main_model"])
+# def multi_query_node(state: State) -> State:
+#     multi_query_agent = get_multi_query_agent(state["main_model"])
 
-    user_message = f"""
-    Message for Multi-Query Agent:
-    Question: {state['query']}
-    Top K Retrieved Docs: {state['top_k_queries']}
-    """
+#     user_message = f"""
+#     Message for Multi-Query Agent:
+#     Question: {state['query']}
+#     Top K Retrieved Docs: {state['top_k_queries']}
+#     """
 
-    human_message = HumanMessage(content=user_message)
+#     human_message = HumanMessage(content=user_message)
 
-    new_messages = [human_message]
+#     new_messages = [human_message]
 
-    agent_input = {
-        "question": state["query"],
-        "k_queries": state["top_k_queries"],
-    }
+#     agent_input = {
+#         "question": state["query"],
+#         "k_queries": state["top_k_queries"],
+#     }
 
-    try:
-        response = multi_query_agent.invoke(agent_input)
-        queries = response.queries
-        logger.info(f"Multi-Query Agent generated queries: {queries}")
+#     try:
+#         response = multi_query_agent.invoke(agent_input)
+#         queries = response.queries
+#         logger.info(f"Multi-Query Agent generated queries: {queries}")
         
 
-        ai_message = AIMessage(content=json.dumps(
-            {
-                "queries": queries,
-            },
-            ensure_ascii=False,
-        ))
-        new_messages.append(ai_message)
+#         ai_message = AIMessage(content=json.dumps(
+#             {
+#                 "queries": queries,
+#             },
+#             ensure_ascii=False,
+#         ))
+#         new_messages.append(ai_message)
 
-        return {
-            "messages": new_messages,
-            "queries": queries,
-        }
-    except Exception as e:
-        logger.error(f"Error occurred while invoking Multi-Query Agent: {e}")
-        return {
-            "messages": new_messages,
-            "queries": [],
-        }
+#         return {
+#             "messages": new_messages,
+#             "queries": queries,
+#         }
+#     except Exception as e:
+#         logger.error(f"Error occurred while invoking Multi-Query Agent: {e}")
+#         return {
+#             "messages": new_messages,
+#             "queries": [],
+#         }
 
-def retrieve_with_rrf_node(state: State) -> State:
+# def retrieve_with_rrf_node(state: State) -> State:
+#     try:
+#         retrieved_docs = retrieve_with_rrf(
+#             queries=state["queries"],
+#             retriever=state["retriever"],
+#             top_k=state["top_k_docs"],
+#         )
+#         logger.info(f"Retrieved {len(retrieved_docs)} documents using RRF fusion")
+#         return {
+#             "retrieved_docs": retrieved_docs,
+#         }
+#     except Exception as e:
+#         logger.error(f"Error occurred while retrieving with RRF fusion: {e}")
+#         return {
+#             "retrieved_docs": [],
+#         }
+    
+def retrieve_with_retriever_node(state: State) -> State:
     try:
-        retrieved_docs = retrieve_with_rrf(
-            queries=state["queries"],
-            retriever=state["retriever"],
-            top_k=state["top_k_docs"],
-        )
-        logger.info(f"Retrieved {len(retrieved_docs)} documents using RRF fusion")
+        retrieved_docs = state["retriever"].invoke(state["query"])
+        logger.info(f"Retrieved {len(retrieved_docs)} documents using retriever")
         return {
             "retrieved_docs": retrieved_docs,
         }
     except Exception as e:
-        logger.error(f"Error occurred while retrieving with RRF fusion: {e}")
+        logger.error(f"Error occurred while retrieving with retriever: {e}")
         return {
             "retrieved_docs": [],
         }

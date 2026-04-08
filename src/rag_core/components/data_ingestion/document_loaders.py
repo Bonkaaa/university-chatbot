@@ -15,6 +15,85 @@ load_dotenv()
 
 logger = setup_logger("document_loader.log", "document_loader")
 
+import re
+from typing import List
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+def process_and_chunk_hust_documents(docs: List[Document]) -> List[Document]:
+    """
+    Nhận List[Document] (đã bị chia theo trang bởi PyPDFLoader), 
+    gộp lại và cấu trúc hóa thành các chunk theo ngữ nghĩa Chương -> Điều.
+    """
+    if not docs:
+        return []
+
+    # 1. GỘP TEXT TỪ TẤT CẢ CÁC TRANG THUỘC CÙNG 1 FILE
+    full_text = "\n".join([doc.page_content for doc in docs])
+    
+    # Giữ lại thông tin nguồn (đường dẫn file) từ trang đầu tiên
+    base_source = docs[0].metadata.get("source", "Unknown_Source")
+
+    # 2. TIỀN XỬ LÝ (CLEANING RÁC TỪ FILE CỦA BẠN)
+    text = re.sub(r'\\s*', '', full_text)
+    text = re.sub(r'--- PAGE \d+ ---', '', text)
+    
+    # 3. TÁCH THEO CHƯƠNG ĐỂ LÀM METADATA
+    chuong_splits = re.split(r'(CHƯƠNG\s+[IVXLCDM]+)', text)
+    
+    new_documents = []
+    current_chuong_meta = "Chưa xác định"
+    
+    for i in range(len(chuong_splits)):
+        segment = chuong_splits[i].strip()
+        if not segment: 
+            continue
+            
+        if re.match(r'^CHƯƠNG\s+[IVXLCDM]+', segment):
+            current_chuong_meta = segment
+            # Bắt tên chương ở dòng tiếp theo
+            if i + 1 < len(chuong_splits):
+                title_match = re.search(r'^(.*?)\n', chuong_splits[i+1].strip())
+                if title_match:
+                    current_chuong_meta += " - " + title_match.group(1).strip()
+        else:
+            # 4. TÁCH THEO ĐIỀU
+            dieu_splits = re.split(r'(?=\nĐiều\s+\d+\.)', segment)
+            
+            for dieu_content in dieu_splits:
+                dieu_content = dieu_content.strip()
+                if not dieu_content or len(dieu_content) < 20: 
+                    continue
+                
+                # Lấy tên Điều
+                dieu_match = re.match(r'^(Điều\s+\d+\.[^\n]+)', dieu_content)
+                dieu_title_meta = dieu_match.group(1).strip() if dieu_match else "Nội dung chung"
+                
+                # Bơm metadata thẳng vào nội dung để LLM dễ đọc (Context Enrichment)
+                enriched_content = f"Tài liệu: {base_source}\nPhần: {current_chuong_meta}\nQuy định tại: {dieu_title_meta}\n\nNội dung chi tiết:\n{dieu_content}"
+                
+                # Tạo Document mới mang ngữ nghĩa hoàn chỉnh
+                doc = Document(
+                    page_content=enriched_content,
+                    metadata={
+                        "source": base_source,
+                        "chuong": current_chuong_meta,
+                        "dieu": dieu_title_meta
+                    }
+                )
+                new_documents.append(doc)
+
+    # 5. CẮT NHỎ CÁC ĐIỀU DÀI (Bảo toàn metadata)
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1200,      
+        chunk_overlap=150,    
+        separators=["\n\n", "\n", ".", " ", ""] 
+    )
+    
+    final_docs = text_splitter.split_documents(new_documents)
+    
+    return final_docs
+
 
 class UniversityDocumentLoader:
     def __init__(self, file_path: str):
@@ -66,20 +145,30 @@ class UniversityDocumentLoader:
         for file_name in os.listdir(self.file_path):
             file_path = os.path.join(self.file_path, file_name)
             if os.path.isfile(file_path):
-                docs = self.load_file(file_path)
-                all_documents.extend(docs)
+                # Load từng file (docs lúc này đang bị chia theo TRANG)
+                raw_docs = self.load_file(file_path)
+                
+                # Nếu là file PDF quy chế, đưa qua bộ lọc Regex
+                if file_name.endswith(".pdf"):
+                    processed_docs = process_and_chunk_hust_documents(raw_docs)
+                    all_documents.extend(processed_docs)
+                else:
+                    # Các file khác giữ nguyên hoặc dùng RecursiveCharacterTextSplitter cơ bản
+                    all_documents.extend(raw_docs)
 
         return all_documents
-    
 
 if __name__ == "__main__":
     # Example usage
     loader = UniversityDocumentLoader("data/raw_documents")
     documents = loader.load_all_documents()
-    print(f"Loaded {len(documents)} documents.")
+    print(f"Đã tạo ra {len(documents)} semantic chunks.")
+    
     # write the documents to a file for testing
-    with open("loaded_documents.txt", "w") as f:
+    with open("loaded_documents.txt", "w", encoding="utf-8") as f:
         for doc in documents:
-            f.write(f"{doc.page_content}\n\n")
+            f.write(f"--- METADATA ---\n{doc.metadata}\n\n")
+            f.write(f"--- CONTENT ---\n{doc.page_content}\n")
+            f.write("="*50 + "\n\n")
 
         
