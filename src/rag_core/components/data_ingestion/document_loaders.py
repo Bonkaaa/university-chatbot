@@ -9,6 +9,7 @@ from langchain_community.document_loaders import (
 )
 from ...utils import setup_logger
 import os 
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -19,6 +20,12 @@ import re
 from typing import List
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from pathlib import Path
+
+# Get project root directory and direct to data folder
+ROOT_DIR = Path(__file__).parent.parent.parent.parent
+DATA_DIR = ROOT_DIR / "data" / "processed_documents"
+
 
 def process_and_chunk_hust_documents(docs: List[Document]) -> List[Document]:
     """
@@ -33,6 +40,7 @@ def process_and_chunk_hust_documents(docs: List[Document]) -> List[Document]:
     
     # Giữ lại thông tin nguồn (đường dẫn file) từ trang đầu tiên
     base_source = docs[0].metadata.get("source", "Unknown_Source")
+    cache_file_name = os.path.splitext(os.path.basename(base_source))[0]
 
     # 2. TIỀN XỬ LÝ (CLEANING RÁC TỪ FILE CỦA BẠN)
     text = re.sub(r'\\s*', '', full_text)
@@ -91,12 +99,18 @@ def process_and_chunk_hust_documents(docs: List[Document]) -> List[Document]:
     )
     
     final_docs = text_splitter.split_documents(new_documents)
+
+    docs_dict = [doc.dict() for doc in final_docs]
     
+    # Save the processed documents to a JSON file for caching and inspection
+    with open(os.path.join(DATA_DIR, f"{cache_file_name}.json"), 'w') as f:
+        json.dump(docs_dict, f, ensure_ascii=False, indent=4)
+
     return final_docs
 
 
 class UniversityDocumentLoader:
-    def __init__(self, file_path: str, file_cache_path: str = "data/processed_documents"):
+    def __init__(self, file_path: str, file_cache_path: str = DATA_DIR):
         self.file_path = file_path
         self.file_cache_path = file_cache_path
 
@@ -137,7 +151,6 @@ class UniversityDocumentLoader:
         
     def load_all_documents(self) -> List[Document]:
         all_documents = []
-        name = []
 
         if not os.path.exists(self.file_path):
             logger.error(f"File path does not exist: {self.file_path}")
@@ -147,19 +160,30 @@ class UniversityDocumentLoader:
         for file_name in os.listdir(self.file_path):
             file_path = os.path.join(self.file_path, file_name)
             if os.path.isfile(file_path):
-                name.append(file_name)
-                # Load từng file (docs lúc này đang bị chia theo TRANG)
-                raw_docs = self.load_file(file_path)
-                
-                # Nếu là file PDF quy chế, đưa qua bộ lọc Regex
-                if file_name.endswith(".pdf"):
-                    processed_docs = process_and_chunk_hust_documents(raw_docs)
-                    all_documents.extend(processed_docs)
-                else:
-                    # Các file khác giữ nguyên hoặc dùng RecursiveCharacterTextSplitter cơ bản
-                    all_documents.extend(raw_docs)
+                # Check for cache
+                cache_file_name = os.path.splitext(file_name)[0] + ".json"
+                cache_file_path = os.path.join(self.file_cache_path, cache_file_name)
 
-        return all_documents, name
+                if os.path.exists(cache_file_path):
+                    logger.info(f"Loading cached processed documents from {cache_file_path}")
+                    with open(cache_file_path, 'r') as f:
+                        cached_docs_dict = json.load(f)
+                        cached_docs = [Document(**doc) for doc in cached_docs_dict]
+                        all_documents.extend(cached_docs)
+                
+                else:
+                    # Load từng file (docs lúc này đang bị chia theo TRANG)
+                    raw_docs = self.load_file(file_path)
+                
+                    # Nếu là file PDF quy chế, đưa qua bộ lọc Regex
+                    if file_name.endswith(".pdf"):
+                        processed_docs = process_and_chunk_hust_documents(raw_docs)
+                        all_documents.extend(processed_docs)
+                    else:
+                        # Các file khác giữ nguyên hoặc dùng RecursiveCharacterTextSplitter cơ bản
+                        all_documents.extend(raw_docs)
+
+        return all_documents
 
 if __name__ == "__main__":
     # Example usage
