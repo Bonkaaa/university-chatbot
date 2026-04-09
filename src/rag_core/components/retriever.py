@@ -3,6 +3,10 @@ from langchain_ollama import OllamaEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_community.retrievers import BM25Retriever
 
+from langchain.embeddings import CacheBackedEmbeddings
+from langchain.store import LocalFileStore  
+from langchain.indexes import SQLRecordManager, index
+
 from .data_ingestion.document_loaders import UniversityDocumentLoader
 from .data_ingestion.text_splitter import create_splitter
 
@@ -14,11 +18,14 @@ def create_retriever(
     k: int = 5,
     fetch_k: int = 20,
     lambda_mult: float = 0.5,
+    persist_directory: str = "../chroma_db",
+    cache_directory: str = "../embedding_cache",
 ):
     # Two types of search: similarity and mmr
     # Similarity search retrieves the top k most similar documents based on cosine similarity.
     # MMR (Maximal Marginal Relevance) search retrieves documents that are both relevant to the query and diverse from each other, using a lambda parameter to balance relevance and diversity.
 
+    # --- Sparse (BM25) Retriever ---
     if type == "Sparse":
         retriever = BM25Retriever.from_documents(
             documents=docs,
@@ -26,13 +33,41 @@ def create_retriever(
         retriever.k = k
         return retriever
 
-    embeddings = OllamaEmbeddings(
+    # --- Base Embeddings ---
+    base_embeddings = OllamaEmbeddings(
         model=embed_model,
     )
 
-    vector_stores = Chroma.from_documents(
+    # --- Embedding Cache ---
+    store = LocalFileStore(cache_directory)
+
+    cached_embeddings = CacheBackedEmbeddings.from_bytes_store(
+        underlying_embeddings=base_embeddings,
+        store=store,
+    )
+
+
+    # --- Vector Store (Chroma) ---
+    vector_stores = Chroma(
+        persist_directory=persist_directory,
+        embedding_function=cached_embeddings,
+    )
+
+    namespace = "chroma"
+    record_manager = SQLRecordManager(
+        namespace=namespace,
+        db_url="sqlite:///record_manager_cache.sql",
+    )
+
+    record_manager.create_schema()
+
+    # Sync documents to vector store
+    index(
         documents=docs,
-        embedding=embeddings,
+        vector_store=vector_stores,
+        record_manager=record_manager,
+        clean_up="incremental",
+        source_id_key="source",
     )
 
     search_kwargs = {

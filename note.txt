@@ -2,4 +2,7 @@ Add message (state)
 
 streaming langgraph
 
-caching docs
+Caching:
+
+- Instead of caching raw pdf files -> Caching the vector store with db under the hood
+
