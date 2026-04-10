@@ -38,12 +38,12 @@ answer_generation_prompt = ChatPromptTemplate.from_messages(
 
             Nhiệm vụ: Dựa trên câu hỏi và các tài liệu đã được truy xuất, hãy tạo ra một câu trả lời chính xác, đầy đủ và dễ hiểu cho người dùng. Câu trả lời nên tổng hợp thông tin từ tất cả các tài liệu đã được truy xuất để cung cấp một phản hồi toàn diện nhất có thể.
             Bạn sẽ trả về một đối tượng JSON có cấu trúc sau:
-            {
+            {{
                 "answer": "Câu trả lời chính xác, đầy đủ và dễ hiểu",
                 "confidence": 0.95,
                 "follow_up_question": ["Câu hỏi tiếp theo 1", "Câu hỏi tiếp theo 2"],
                 "intent": "Học phí"
-            }
+            }}
             Trong đó:
             - "answer" là câu trả lời dựa trên câu hỏi và các tài liệu đã được truy xuất.
             - "confidence" là điểm số thể hiện độ tự tin của câu trả lời, nằm trong khoảng từ 0 đến 1.
