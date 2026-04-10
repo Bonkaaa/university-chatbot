@@ -7,7 +7,7 @@ from langchain_community.document_loaders import (
     TextLoader,
     WebBaseLoader,
 )
-from ...utils import setup_logger
+from ...utils import get_doc_id, setup_logger
 import os 
 import json
 from dotenv import load_dotenv
@@ -23,7 +23,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pathlib import Path
 
 # Get project root directory and direct to data folder
-ROOT_DIR = Path(__file__).parent.parent.parent.parent
+ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent
 DATA_DIR = ROOT_DIR / "data" / "processed_documents"
 
 
@@ -86,7 +86,7 @@ def process_and_chunk_hust_documents(docs: List[Document]) -> List[Document]:
                     metadata={
                         "source": base_source,
                         "chuong": current_chuong_meta,
-                        "dieu": dieu_title_meta
+                        "dieu": dieu_title_meta,
                     }
                 )
                 new_documents.append(doc)
@@ -100,7 +100,7 @@ def process_and_chunk_hust_documents(docs: List[Document]) -> List[Document]:
     
     final_docs = text_splitter.split_documents(new_documents)
 
-    docs_dict = [doc.dict() for doc in final_docs]
+    docs_dict = [doc.model_dump() for doc in final_docs]
     
     # Save the processed documents to a JSON file for caching and inspection
     with open(os.path.join(DATA_DIR, f"{cache_file_name}.json"), 'w') as f:
@@ -187,18 +187,9 @@ class UniversityDocumentLoader:
 
 if __name__ == "__main__":
     # Example usage
-    loader = UniversityDocumentLoader("data/raw_documents")
-    documents, file_names = loader.load_all_documents()
+    loader = UniversityDocumentLoader("data\\raw_documents")
+    documents= loader.load_all_documents()
     print(f"Đã tạo ra {len(documents)} semantic chunks.")
-    print(f"File names: {file_names}")
-
-    # write the documents to a file for testing
-    for file_name in file_names:
-        with open(f"processed_{file_name}.txt", "w", encoding="utf-8") as f:
-            for doc in documents:
-                if doc.metadata.get("source", "").endswith(file_name):
-                    f.write(f"--- METADATA ---\n{doc.metadata}\n\n")
-                    f.write(f"--- CONTENT ---\n{doc.page_content}\n")
-                    f.write("="*50 + "\n\n")
+    print("\n---\n".join([f"Document ID: {doc.metadata.get('source', 'unknown_id')}\nContent: {doc.page_content[:500]}..." for doc in documents[:5]]))
 
         

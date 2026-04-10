@@ -7,3 +7,5 @@ docx2txt
 beautifulsoup4
 dotenv
 chromadb
+langgraph-checkpoint-sqlite
+langchain-chroma

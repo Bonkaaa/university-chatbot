@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os 
 from pathlib import Path
@@ -38,6 +39,13 @@ def setup_logger(log_file_name: str, logger_name: str, log_level=logging.INFO) -
         logger.addHandler(file_handler)
 
     return logger
+
+def get_doc_id(content: str) -> str:
+    int_id = int(hashlib.sha256(content.encode("utf-8")).hexdigest(), 16)
+    return str(int_id)
+
+def create_thread_id() -> str:
+    return hashlib.sha256(os.urandom(16)).hexdigest()
 
 if __name__ == "__main__":
     # Example usage

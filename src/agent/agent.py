@@ -1,5 +1,5 @@
 from langgraph.graph import add_messages
-from langchain_core.messages import HumanMessage, AIMessage, AnyMessage
+from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, RemoveMessage
 from langchain_core.documents import Document
 
 from typing_extensions import TypedDict, Annotated, Any, List, Dict
@@ -48,37 +48,37 @@ def load_docs_node(state: State) -> State:
             "split_docs": [],
         }
 
-def split_docs_node(state: State) -> State:
-    try: 
-        splitter = create_splitter(chunk_size=state["chunk_size"], chunk_overlap=state["chunk_overlap"])
-        split_docs = splitter.split_documents(state["raw_docs"])
-        logger.info(f"Split documents into {len(split_docs)} chunks")
-        return {
-            "split_docs": split_docs,
-        }
-    except Exception as e:
-        logger.error(f"Error occurred while splitting documents: {e}")
-        return {
-            "split_docs": [],
-        }
+# def split_docs_node(state: State) -> State:
+#     try: 
+#         splitter = create_splitter(chunk_size=state["chunk_size"], chunk_overlap=state["chunk_overlap"])
+#         split_docs = splitter.split_documents(state["raw_docs"])
+#         logger.info(f"Split documents into {len(split_docs)} chunks")
+#         return {
+#             "split_docs": split_docs,
+#         }
+#     except Exception as e:
+#         logger.error(f"Error occurred while splitting documents: {e}")
+#         return {
+#             "split_docs": [],
+#         }
     
 
-def vector_store_retriever_node(state: State) -> State:
-    try: 
-        retriever = create_retriever(
-            docs=state["split_docs"],
-            embed_model=state["embed_model"],
-            k=state["top_k_docs"],
-        )
-        logger.info(f"Created retriever with top_k={state['top_k_docs']} using embed_model={state['embed_model']}")
-        return {
-            "retriever": retriever,
-        }
-    except Exception as e:
-        logger.error(f"Error occurred while creating retriever: {e}")
-        return {
-            "retriever": None,
-        }
+# def vector_store_retriever_node(state: State) -> State:
+#     try: 
+#         retriever = create_retriever(
+#             docs=state["split_docs"],
+#             embed_model=state["embed_model"],
+#             k=state["top_k_docs"],
+#         )
+#         logger.info(f"Created retriever with top_k={state['top_k_docs']} using embed_model={state['embed_model']}")
+#         return {
+#             "retriever": retriever,
+#         }
+#     except Exception as e:
+#         logger.error(f"Error occurred while creating retriever: {e}")
+#         return {
+#             "retriever": None,
+#         }
     
 
 # def get_llm_node(state: State) -> Any:
@@ -156,7 +156,13 @@ def vector_store_retriever_node(state: State) -> State:
     
 def retrieve_with_retriever_node(state: State) -> State:
     try:
-        retrieved_docs = state["retriever"].invoke(state["query"])
+        retriever = create_retriever(
+        docs=state["split_docs"],
+        embed_model=state["embed_model"],
+        k=state["top_k_docs"],
+        )
+
+        retrieved_docs = retriever.invoke(state["query"])
         logger.info(f"Retrieved {len(retrieved_docs)} documents using retriever")
         return {
             "retrieved_docs": retrieved_docs,
@@ -172,6 +178,14 @@ def generate_answer_node(state: State) -> State:
     Question from user: {state['query']}
     Retrieved documents: {state['retrieved_docs']}
     """
+    # Process the message state
+    messages = state.get("messages", [])
+    delete_command = []
+
+    if len(messages) > 5: # WOULD CHANGE TO CONFIG LATER
+        old_messages = messages[:-5]
+        for msg in old_messages:
+            delete_command.append(RemoveMessage(id=msg.id))
 
     human_message = HumanMessage(content=user_message)
 
@@ -182,8 +196,13 @@ def generate_answer_node(state: State) -> State:
         ai_message = AIMessage(content="Xin lỗi, tôi không tìm thấy thông tin liên quan đến câu hỏi của bạn.")
         new_messages.append(ai_message)
         return {
-            "final_answer": "Xin lỗi, tôi không tìm thấy thông tin liên quan đến câu hỏi của bạn.",
-            "messages": new_messages,
+            "final_answer": {
+                "answer": "Xin lỗi, tôi không tìm thấy thông tin liên quan đến câu hỏi của bạn.",
+                "confidence": 0.0,
+                "follow_up_question": [],
+                "intent": "unknown",
+            },
+            "messages": delete_command + new_messages,
         }
 
     try:
@@ -215,13 +234,18 @@ def generate_answer_node(state: State) -> State:
 
         return {
             "final_answer": response_dict,
-            "messages": new_messages,
+            "messages": delete_command + new_messages,
         }
     except Exception as e:
         logger.error(f"Error occurred while generating answer: {e}")
         return {
-            "final_answer": {"answer": "Xin lỗi, đã xảy ra lỗi khi tạo câu trả lời."},
-            "messages": new_messages,
+            "final_answer": {
+                "answer": "Xin lỗi, đã xảy ra lỗi khi tạo câu trả lời.",
+                "confidence": 0.0,
+                "follow_up_question": [],
+                "intent": "unknown",
+            },
+            "messages": delete_command + new_messages,
         }
 
 
