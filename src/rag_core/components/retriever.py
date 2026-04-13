@@ -11,10 +11,14 @@ from pathlib import Path
 
 from .data_ingestion.document_loaders import UniversityDocumentLoader
 from .data_ingestion.text_splitter import create_splitter
+from ..utils import setup_logger
+from ...config import CHROMA_DB_DIR, EMBEDDING_CACHE_DIR, RAW_DOCS_DIR
+
+logger = setup_logger("retriever.log", "retriever")
 
 
-ROOT_DIR = Path(__file__).parent.parent.parent.parent
-DATA_DIR = ROOT_DIR / "data"
+# ROOT_DIR = Path(__file__).parent.parent.parent.parent
+# DATA_DIR = ROOT_DIR / "data"
 
 
 def create_retriever(
@@ -25,8 +29,8 @@ def create_retriever(
     k: int = 5,
     fetch_k: int = 20,
     lambda_mult: float = 0.5,
-    persist_directory: str = str(DATA_DIR / "chroma_db"),
-    cache_directory: str = str(DATA_DIR / "embedding_cache"),
+    persist_directory: str = str(CHROMA_DB_DIR),
+    cache_directory: str = str(EMBEDDING_CACHE_DIR),
 ):
     # Two types of search: similarity and mmr
     # Similarity search retrieves the top k most similar documents based on cosine similarity.
@@ -53,6 +57,7 @@ def create_retriever(
         document_embedding_cache=store,
         key_encoder="sha256"
     )
+    logger.info(f"Initialized CacheBackedEmbeddings with cache directory: {cache_directory}")
 
 
     # --- Vector Store (Chroma) ---
@@ -60,12 +65,15 @@ def create_retriever(
         persist_directory=persist_directory,
         embedding_function=cached_embeddings,
     )
+    logger.info(f"Initialized Chroma vector store with persist directory: {persist_directory}")
+
 
     namespace = "chroma"
     record_manager = SQLRecordManager(
         namespace=namespace,
-        db_url="sqlite:///data/chroma_db/record_manager_cache.sql",
+        db_url=f"sqlite:///{CHROMA_DB_DIR}/record_manager_cache.sql",
     )
+    logger.info(f"Initialized SQLRecordManager with namespace: {namespace} and db_url: {record_manager.db_url}")
 
     record_manager.create_schema()
 
@@ -78,6 +86,7 @@ def create_retriever(
         source_id_key="source",
         key_encoder="sha256",
     )
+    logger.info(f"Indexed {len(docs)} documents into the vector store")
 
     search_kwargs = {
         "k": k,
@@ -90,7 +99,7 @@ def create_retriever(
     return vector_stores.as_retriever(search_kwargs=search_kwargs, search_type=search_type)
 
 if __name__ == "__main__":
-    loader = UniversityDocumentLoader("data/raw_documents")
+    loader = UniversityDocumentLoader(RAW_DOCS_DIR)
     docs = loader.load_all_documents()
 
     text_splitter = create_splitter(chunk_size=500, chunk_overlap=50)

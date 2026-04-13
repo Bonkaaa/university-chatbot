@@ -161,6 +161,7 @@ def retrieve_with_retriever_node(state: State) -> State:
         embed_model=state["embed_model"],
         k=state["top_k_docs"],
         )
+        logger.info(f"Created retriever with top_k={state['top_k_docs']} using embed_model={state['embed_model']}")
 
         retrieved_docs = retriever.invoke(state["query"])
         logger.info(f"Retrieved {len(retrieved_docs)} documents using retriever")

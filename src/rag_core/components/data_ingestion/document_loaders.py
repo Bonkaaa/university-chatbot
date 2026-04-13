@@ -11,6 +11,7 @@ from ...utils import get_doc_id, setup_logger
 import os 
 import json
 from dotenv import load_dotenv
+from ....config import PROCESSED_DOCS_DIR, RAW_DOCS_DIR
 
 load_dotenv()
 
@@ -23,8 +24,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pathlib import Path
 
 # Get project root directory and direct to data folder
-ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent
-DATA_DIR = ROOT_DIR / "data" / "processed_documents"
+# ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent
+# DATA_DIR = ROOT_DIR / "data" / "processed_documents"
 
 
 def process_and_chunk_hust_documents(docs: List[Document]) -> List[Document]:
@@ -103,14 +104,14 @@ def process_and_chunk_hust_documents(docs: List[Document]) -> List[Document]:
     docs_dict = [doc.model_dump() for doc in final_docs]
     
     # Save the processed documents to a JSON file for caching and inspection
-    with open(os.path.join(DATA_DIR, f"{cache_file_name}.json"), 'w') as f:
+    with open(os.path.join(PROCESSED_DOCS_DIR, f"{cache_file_name}.json"), 'w') as f:
         json.dump(docs_dict, f, ensure_ascii=False, indent=4)
 
     return final_docs
 
 
 class UniversityDocumentLoader:
-    def __init__(self, file_path: str, file_cache_path: str = DATA_DIR):
+    def __init__(self, file_path: str, file_cache_path: str = PROCESSED_DOCS_DIR):
         self.file_path = file_path
         self.file_cache_path = file_cache_path
 
@@ -187,7 +188,7 @@ class UniversityDocumentLoader:
 
 if __name__ == "__main__":
     # Example usage
-    loader = UniversityDocumentLoader("data\\raw_documents")
+    loader = UniversityDocumentLoader(RAW_DOCS_DIR)
     documents= loader.load_all_documents()
     print(f"Đã tạo ra {len(documents)} semantic chunks.")
     print("\n---\n".join([f"Document ID: {doc.metadata.get('source', 'unknown_id')}\nContent: {doc.page_content[:500]}..." for doc in documents[:5]]))
