@@ -73,7 +73,7 @@ def create_retriever(
         namespace=namespace,
         db_url=f"sqlite:///{CHROMA_DB_DIR}/record_manager_cache.sql",
     )
-    logger.info(f"Initialized SQLRecordManager with namespace: {namespace} and db_url: {record_manager.db_url}")
+    logger.info(f"Initialized SQLRecordManager with namespace: {namespace} and db_url: sqlite:///{CHROMA_DB_DIR}/record_manager_cache.sql")
 
     record_manager.create_schema()
 
@@ -111,6 +111,7 @@ if __name__ == "__main__":
     )
 
     print(retriever)
-    
+
+# python -m src.rag_core.components.retriever 
     
 

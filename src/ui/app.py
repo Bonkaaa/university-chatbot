@@ -1,7 +1,5 @@
 import chainlit as cl
 
-
-
 from src.agent import RAGAgent
 from src.config import CONVERSATION_DB_DIR, RAW_DOCS_DIR, MODEL_NAME, EMBED_MODEL_NAME
 
@@ -24,4 +22,6 @@ async def handle_message(message: cl.Message):
     response = agent.chat(user_query)
 
     await cl.Message(content=response["final_answer"]["answer"]).send()
+
+# $env:PYTHONPATH = "C:\university_chatbot"
 
