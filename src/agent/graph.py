@@ -109,8 +109,6 @@ class RAGAgent:
             }
 
             init_state: State = {
-                "messages": [],
-
                 "query": query,
                 "path_to_docs": self.path_to_docs,
 
