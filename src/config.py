@@ -9,6 +9,7 @@ PROCESSED_DOCS_DIR = DATA_DIR / "processed_documents"
 CHROMA_DB_DIR = DATA_DIR / "chroma_db"
 EMBEDDING_CACHE_DIR = DATA_DIR / "embedding_cache"
 RAW_DOCS_DIR = DATA_DIR / "raw_documents"
+CONVERSATION_DB_DIR = DATA_DIR / "conversation_db"
 
 # Agent
 MODEL_NAME = "xiaomi/mimo-v2-omni"

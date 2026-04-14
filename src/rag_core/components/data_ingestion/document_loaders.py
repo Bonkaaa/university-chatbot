@@ -7,7 +7,7 @@ from langchain_community.document_loaders import (
     TextLoader,
     WebBaseLoader,
 )
-from ...utils import get_doc_id, setup_logger
+from ...utils import setup_logger
 import os 
 import json
 from dotenv import load_dotenv
