@@ -2,7 +2,7 @@ from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
 from langchain_core.documents import Document
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from typing_extensions import TypedDict, Annotated, Any, List
 
@@ -13,7 +13,7 @@ from pathlib import Path
 
 load_dotenv()  # Load environment variables from .env file
 
-from ..rag_core import setup_logger, create_thread_id
+from ..rag_core import setup_logger
 
 logger = setup_logger("agent_graph.log", "agent_graph")
 
@@ -24,26 +24,6 @@ from .agent import (
     generate_answer_node,
     retrieve_with_retriever_node
 )
-
-# def create_agent_graph() -> StateGraph:
-#     graph = StateGraph(State)
-
-#     # Define the nodes in the graph
-#     graph.add_node("load_docs", load_docs_node)
-#     graph.add_node("vector_store_retriever", vector_store_retriever_node)
-#     graph.add_node("retrieve_with_retriever", retrieve_with_retriever_node)
-#     graph.add_node("generate_answer", generate_answer_node)
-
-#     # Define the edges between the nodes
-#     graph.add_edge(START, "load_docs")
-#     graph.add_edge("load_docs", "vector_store_retriever")
-#     graph.add_edge("vector_store_retriever", "retrieve_with_retriever")
-#     graph.add_edge("retrieve_with_retriever", "generate_answer")
-
-#     graph.add_edge("generate_answer", END)
-
-#     return graph.compile()
-
 
 class RAGAgent:
     def __init__(
@@ -60,6 +40,8 @@ class RAGAgent:
         split_docs: List[Document] =[],
         retrieved_docs: List[Document] =[],
     ):
+        conversation_db_path = Path(conversation_db_path) / "conversations_db.json"
+
         if not os.path.exists(conversation_db_path):
             # Create the database file if it doesn't exist
             os.makedirs(os.path.dirname(conversation_db_path), exist_ok=True)
@@ -95,16 +77,17 @@ class RAGAgent:
 
         return graph
 
-    def chat(
+    async def astream_chat(
         self,
         query: str,
+        thread_id: str,
     ):
-        with SqliteSaver.from_conn_string(self.db_path) as checkpointer:
+        async with AsyncSqliteSaver.from_conn_string(self.db_path) as checkpointer:
             graph = self.builder.compile(checkpointer=checkpointer)
 
             config = {
                 "configurable": {
-                    "thread_id": create_thread_id(),
+                    "thread_id": thread_id,
                 }
             }
 
@@ -128,9 +111,48 @@ class RAGAgent:
                 },
             }
 
-            response = graph.invoke(init_state, config=config)
+            previous_answer = ""
+            final_answer = None
 
-            return response
+            async for event in graph.astream_events(init_state, config=config, version="v2"):
+                event_name = event.get("event", "")
+
+                if event_name == "on_parser_stream":
+                    chunk = event.get("data", {}).get("chunk", {})
+
+                    if isinstance(chunk, dict):
+                        current_answer = chunk.get("answer", "")
+
+                        if isinstance(current_answer, str) and current_answer:
+                            if current_answer.startswith(previous_answer):
+                                delta = current_answer[len(previous_answer):]
+                            else:
+                                delta = current_answer
+
+                            previous_answer = current_answer
+
+                            if delta:
+                                yield {
+                                    "type": "token",
+                                    "content": delta,
+                                }
+
+                if event_name == "on_chain_end" and event.get("name") == "generate_answer":
+                    node_output = event.get("data", {}).get("output", {})
+                    if isinstance(node_output, dict):
+                        final_answer = node_output.get("final_answer")
+
+            if not isinstance(final_answer, dict):
+                final_answer = {
+                    "answer": previous_answer,
+                    "confidence": 0.0,
+                    "intent": "unknown",
+                }
+
+            yield {
+                "type": "final",
+                "final_answer": final_answer,
+            }
 
             
 
