@@ -1,0 +1,16 @@
+Add message (state)
+
+streaming langgraph
+
+Caching:
+
+- Instead of caching raw pdf files -> Caching the vector store with db under the hood
+
+# Chainlit structure
+
+@cl.set_starters: Should initialize some famous questions for the user to ask, so that they can get started with the app
+
+- Apply streaming: a technique that delivers generated text tokens incrementally, rather than waiting for the entire response to be generated
+
+- Authentication and data persistance
+

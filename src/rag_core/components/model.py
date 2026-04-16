@@ -1,16 +1,18 @@
+import os
 from typing import List
 
-from langchain_ollama import ChatOllama
+from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
-from .templates import multi_query_prompt
-
 
 def get_llm(
     model_name: str,
     temperature: float = 0.2,
-) -> ChatOllama:
-    return ChatOllama(
+) -> ChatOpenAI:
+    return ChatOpenAI(
         model=model_name,
         temperature=temperature,
-        validate_model_on_init=True,
+        base_url="https://openrouter.ai/api/v1",
+        max_tokens=4096,
+        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        max_retries=2
     )

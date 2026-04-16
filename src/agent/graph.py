@@ -2,11 +2,15 @@ from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
 from langchain_core.documents import Document
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from typing_extensions import TypedDict, Annotated, Any, List
 
 import os
 from dotenv import load_dotenv
+from pathlib import Path
+
+
 load_dotenv()  # Load environment variables from .env file
 
 from ..rag_core import setup_logger
@@ -17,97 +21,140 @@ logger = setup_logger("agent_graph.log", "agent_graph")
 from .agent import (
     State,
     load_docs_node,
-    # split_docs_node,
-    vector_store_retriever_node,
-    multi_query_node,
     generate_answer_node,
-    retrieve_with_rrf_node,
+    retrieve_with_retriever_node
 )
 
-def create_agent_graph() -> StateGraph:
-    graph = StateGraph(State)
+class RAGAgent:
+    def __init__(
+        self, 
+        conversation_db_path: str,
 
-    # Define the nodes in the graph
-    graph.add_node("load_docs", load_docs_node)
-    # graph.add_node("split_docs", split_docs_node)
-    graph.add_node("vector_store_retriever", vector_store_retriever_node)
-    graph.add_node("multi_query", multi_query_node)
-    graph.add_node("retrieve_with_rrf", retrieve_with_rrf_node)
-    graph.add_node("generate_answer", generate_answer_node)
+        path_to_docs: str,
 
-    # Define the edges between the nodes
-    graph.add_edge(START, "load_docs")
+        embed_model: str,
+        main_model: str,
+
+        top_k_docs: int = 5,
+        
+        split_docs: List[Document] =[],
+        retrieved_docs: List[Document] =[],
+    ):
+        conversation_db_path = Path(conversation_db_path) / "conversations_db.json"
+
+        if not os.path.exists(conversation_db_path):
+            # Create the database file if it doesn't exist
+            os.makedirs(os.path.dirname(conversation_db_path), exist_ok=True)
+            with open(conversation_db_path, 'w') as f:
+                pass  # Just create an empty file
+        self.db_path = conversation_db_path
 
 
-    # graph.add_edge("load_docs", "split_docs")
-    # graph.add_edge("split_docs", "vector_store_retriever")
-    
-    graph.add_edge("load_docs", "vector_store_retriever")
-    graph.add_edge("vector_store_retriever", "multi_query")
+        self.path_to_docs = path_to_docs
+        self.embed_model = embed_model
+        self.main_model = main_model
+        self.top_k_docs = top_k_docs
+        self.split_docs = split_docs
+        self.retrieved_docs = retrieved_docs
 
-    graph.add_edge("multi_query", "retrieve_with_rrf")
 
-    # Final answer generation
-    graph.add_edge("retrieve_with_rrf", "generate_answer")
+        self.builder = self._build_graph()
 
-    graph.add_edge("generate_answer", END)
+    def _build_graph(self) -> StateGraph:
+        graph = StateGraph(State)
 
-    return graph.compile()
+        # Define the nodes in the graph
+        graph.add_node("load_docs", load_docs_node)
+        graph.add_node("retrieve_with_retriever", retrieve_with_retriever_node)
+        graph.add_node("generate_answer", generate_answer_node)
+
+        # Define the edges between the nodes
+        graph.add_edge(START, "load_docs")
+        graph.add_edge("load_docs", "retrieve_with_retriever")
+        graph.add_edge("retrieve_with_retriever", "generate_answer")
+
+        graph.add_edge("generate_answer", END)
+
+        return graph
+
+    async def astream_chat(
+        self,
+        query: str,
+        thread_id: str,
+    ):
+        async with AsyncSqliteSaver.from_conn_string(self.db_path) as checkpointer:
+            graph = self.builder.compile(checkpointer=checkpointer)
+
+            config = {
+                "configurable": {
+                    "thread_id": thread_id,
+                }
+            }
+
+            init_state: State = {
+                "query": query,
+                "path_to_docs": self.path_to_docs,
+
+                "embed_model": self.embed_model,
+                "main_model": self.main_model,
+
+                "top_k_docs": self.top_k_docs,
+
+                "split_docs": self.split_docs,
+                "retrieved_docs": self.retrieved_docs,
+
+                "final_answer": {
+                    "answer": "",
+                    "confidence": 0.0,
+                    "follow_up_question": [],
+                    "intent": "",
+                },
+            }
+
+            previous_answer = ""
+            final_answer = None
+
+            async for event in graph.astream_events(init_state, config=config, version="v2"):
+                event_name = event.get("event", "")
+
+                if event_name == "on_parser_stream":
+                    chunk = event.get("data", {}).get("chunk", {})
+
+                    if isinstance(chunk, dict):
+                        current_answer = chunk.get("answer", "")
+
+                        if isinstance(current_answer, str) and current_answer:
+                            if current_answer.startswith(previous_answer):
+                                delta = current_answer[len(previous_answer):]
+                            else:
+                                delta = current_answer
+
+                            previous_answer = current_answer
+
+                            if delta:
+                                yield {
+                                    "type": "token",
+                                    "content": delta,
+                                }
+
+                if event_name == "on_chain_end" and event.get("name") == "generate_answer":
+                    node_output = event.get("data", {}).get("output", {})
+                    if isinstance(node_output, dict):
+                        final_answer = node_output.get("final_answer")
+
+            if not isinstance(final_answer, dict):
+                final_answer = {
+                    "answer": previous_answer,
+                    "confidence": 0.0,
+                    "intent": "unknown",
+                }
+
+            yield {
+                "type": "final",
+                "final_answer": final_answer,
+            }
+
+            
 
 if __name__ == "__main__":
-    class State(TypedDict):
-        messages: Annotated[List[AnyMessage], add_messages]
-
-        query: str
-        queries: List[str]
-        path_to_docs: str
-
-        chunk_size: int
-        chunk_overlap: int
-
-        embed_model: str
-        main_model: str
-        llm: Any
-
-        top_k_docs: int
-        top_k_queries: int
-
-        raw_docs: List[Document]
-        split_docs: List[Document]
-        retrieved_docs: str
-
-        final_answer: str
-
-    init_state: State = {
-        "messages": [],
-
-        "query": "Điều kiện để được xét công nhận tốt nghiệp đại học là gì?",
-        "queries": [],
-        "path_to_docs": "data/raw_documents",
-
-        "chunk_size": 2000,
-        "chunk_overlap": 200,
-
-        "embed_model": "mxbai-embed-large",
-        "main_model": "llama3:8b",
-
-        "top_k_docs": 3,
-        "top_k_queries": 3,
-
-        "raw_docs": [],
-        "split_docs": [],
-        "retrieved_docs": "",
-
-        "final_answer": "",
-    }
-
-    graph = create_agent_graph()
-    final_state = graph.invoke(init_state)
-
-    print(f"Final Answer: {final_state['final_answer']}")
-
-
-    
-
-
-
+    pass

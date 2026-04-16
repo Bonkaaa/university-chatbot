@@ -9,7 +9,9 @@ from langchain_community.document_loaders import (
 )
 from ...utils import setup_logger
 import os 
+import json
 from dotenv import load_dotenv
+from ....config import PROCESSED_DOCS_DIR, RAW_DOCS_DIR
 
 load_dotenv()
 
@@ -19,6 +21,12 @@ import re
 from typing import List
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from pathlib import Path
+
+# Get project root directory and direct to data folder
+# ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent
+# DATA_DIR = ROOT_DIR / "data" / "processed_documents"
+
 
 def process_and_chunk_hust_documents(docs: List[Document]) -> List[Document]:
     """
@@ -33,6 +41,7 @@ def process_and_chunk_hust_documents(docs: List[Document]) -> List[Document]:
     
     # Giữ lại thông tin nguồn (đường dẫn file) từ trang đầu tiên
     base_source = docs[0].metadata.get("source", "Unknown_Source")
+    cache_file_name = os.path.splitext(os.path.basename(base_source))[0]
 
     # 2. TIỀN XỬ LÝ (CLEANING RÁC TỪ FILE CỦA BẠN)
     text = re.sub(r'\\s*', '', full_text)
@@ -78,7 +87,7 @@ def process_and_chunk_hust_documents(docs: List[Document]) -> List[Document]:
                     metadata={
                         "source": base_source,
                         "chuong": current_chuong_meta,
-                        "dieu": dieu_title_meta
+                        "dieu": dieu_title_meta,
                     }
                 )
                 new_documents.append(doc)
@@ -91,13 +100,20 @@ def process_and_chunk_hust_documents(docs: List[Document]) -> List[Document]:
     )
     
     final_docs = text_splitter.split_documents(new_documents)
+
+    docs_dict = [doc.model_dump() for doc in final_docs]
     
+    # Save the processed documents to a JSON file for caching and inspection
+    with open(os.path.join(PROCESSED_DOCS_DIR, f"{cache_file_name}.json"), 'w') as f:
+        json.dump(docs_dict, f, ensure_ascii=False, indent=4)
+
     return final_docs
 
 
 class UniversityDocumentLoader:
-    def __init__(self, file_path: str):
+    def __init__(self, file_path: str, file_cache_path: str = PROCESSED_DOCS_DIR):
         self.file_path = file_path
+        self.file_cache_path = file_cache_path
 
     def load_file(self, file_path: str) -> List[Document]:
         if not os.path.exists(file_path):
@@ -145,30 +161,36 @@ class UniversityDocumentLoader:
         for file_name in os.listdir(self.file_path):
             file_path = os.path.join(self.file_path, file_name)
             if os.path.isfile(file_path):
-                # Load từng file (docs lúc này đang bị chia theo TRANG)
-                raw_docs = self.load_file(file_path)
+                # Check for cache
+                cache_file_name = os.path.splitext(file_name)[0] + ".json"
+                cache_file_path = os.path.join(self.file_cache_path, cache_file_name)
+
+                if os.path.exists(cache_file_path):
+                    logger.info(f"Loading cached processed documents from {cache_file_path}")
+                    with open(cache_file_path, 'r') as f:
+                        cached_docs_dict = json.load(f)
+                        cached_docs = [Document(**doc) for doc in cached_docs_dict]
+                        all_documents.extend(cached_docs)
                 
-                # Nếu là file PDF quy chế, đưa qua bộ lọc Regex
-                if file_name.endswith(".pdf"):
-                    processed_docs = process_and_chunk_hust_documents(raw_docs)
-                    all_documents.extend(processed_docs)
                 else:
-                    # Các file khác giữ nguyên hoặc dùng RecursiveCharacterTextSplitter cơ bản
-                    all_documents.extend(raw_docs)
+                    # Load từng file (docs lúc này đang bị chia theo TRANG)
+                    raw_docs = self.load_file(file_path)
+                
+                    # Nếu là file PDF quy chế, đưa qua bộ lọc Regex
+                    if file_name.endswith(".pdf"):
+                        processed_docs = process_and_chunk_hust_documents(raw_docs)
+                        all_documents.extend(processed_docs)
+                    else:
+                        # Các file khác giữ nguyên hoặc dùng RecursiveCharacterTextSplitter cơ bản
+                        all_documents.extend(raw_docs)
 
         return all_documents
 
 if __name__ == "__main__":
     # Example usage
-    loader = UniversityDocumentLoader("data/raw_documents")
-    documents = loader.load_all_documents()
+    loader = UniversityDocumentLoader(RAW_DOCS_DIR)
+    documents= loader.load_all_documents()
     print(f"Đã tạo ra {len(documents)} semantic chunks.")
-    
-    # write the documents to a file for testing
-    with open("loaded_documents.txt", "w", encoding="utf-8") as f:
-        for doc in documents:
-            f.write(f"--- METADATA ---\n{doc.metadata}\n\n")
-            f.write(f"--- CONTENT ---\n{doc.page_content}\n")
-            f.write("="*50 + "\n\n")
+    print("\n---\n".join([f"Document ID: {doc.metadata.get('source', 'unknown_id')}\nContent: {doc.page_content[:500]}..." for doc in documents[:5]]))
 
         
