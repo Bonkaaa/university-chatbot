@@ -15,3 +15,6 @@ CONVERSATION_DB_DIR = DATA_DIR / "conversation_db"
 MODEL_NAME = "xiaomi/mimo-v2-omni"
 EMBED_MODEL_NAME = "hf.co/CompendiumLabs/bge-m3-gguf:latest"
 
+# Config number
+MAX_CONVERSATION_HISTORY = 5
+
