@@ -5,3 +5,6 @@ logs/
 data/
 .venv/
 .env
+.chainlit/
+.files
+chainlit.md
