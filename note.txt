@@ -2,6 +2,8 @@ Add message (state)
 
 streaming langgraph
 
+$env:PYTHONPATH = "C:\university_chatbot"
+
 Caching:
 
 - Instead of caching raw pdf files -> Caching the vector store with db under the hood

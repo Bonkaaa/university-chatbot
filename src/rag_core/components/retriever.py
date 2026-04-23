@@ -6,112 +6,146 @@ from langchain_community.retrievers import BM25Retriever
 from langchain_classic.embeddings.cache import CacheBackedEmbeddings
 from langchain_classic.storage import LocalFileStore  
 from langchain_classic.indexes import SQLRecordManager, index
+from langchain_classic.retrievers.ensemble import EnsembleRetriever
+
 
 from pathlib import Path
+from typing import List
 
 from .data_ingestion.document_loaders import UniversityDocumentLoader
 from .data_ingestion.text_splitter import create_splitter
 from ..utils import setup_logger
 from ...config import CHROMA_DB_DIR, EMBEDDING_CACHE_DIR, RAW_DOCS_DIR
 
+import pickle
+
 logger = setup_logger("retriever.log", "retriever")
 
 
-# ROOT_DIR = Path(__file__).parent.parent.parent.parent
-# DATA_DIR = ROOT_DIR / "data"
+class RetrieverComponent:
+    def __init__(
+        self,
+        embed_model: str,
+        persist_directory: str = str(CHROMA_DB_DIR),
+        cache_directory: str = str(EMBEDDING_CACHE_DIR),
+    ):
+        self.embed_model = embed_model
+        self.persist_directory = Path(persist_directory)
+        self.cache_directory = Path(cache_directory)
+        self.sparse_cache_directory = self.cache_directory / "bm25_cache.pkl"
 
-
-def create_retriever(
-    docs: list[Document],
-    embed_model: str,
-    type: str = "Dense",
-    search_type: str = "similarity",
-    k: int = 5,
-    fetch_k: int = 20,
-    lambda_mult: float = 0.5,
-    persist_directory: str = str(CHROMA_DB_DIR),
-    cache_directory: str = str(EMBEDDING_CACHE_DIR),
-):
-    # Two types of search: similarity and mmr
-    # Similarity search retrieves the top k most similar documents based on cosine similarity.
-    # MMR (Maximal Marginal Relevance) search retrieves documents that are both relevant to the query and diverse from each other, using a lambda parameter to balance relevance and diversity.
-
-    # --- Sparse (BM25) Retriever ---
-    if type == "Sparse":
-        retriever = BM25Retriever.from_documents(
-            documents=docs,
+        # Initialize the retriever as None; it will be created when needed
+        base_embeddings = OllamaEmbeddings(
+            model=embed_model,
         )
+
+        self.store = LocalFileStore(str(self.cache_directory))
+
+        self.cached_embeddings = CacheBackedEmbeddings.from_bytes_store(
+            underlying_embeddings=base_embeddings,
+            document_embedding_cache=self.store,
+            key_encoder="sha256"
+        )
+        
+        logger.info(f"Initialized RetrieverComponent with embedding model: {embed_model}, persist directory: {persist_directory}, cache directory: {cache_directory}")
+
+    def _get_vector_store(self):
+        return Chroma(
+            embedding_function=self.cached_embeddings,
+            persist_directory=str(self.persist_directory),
+        )
+    
+    def _sync_index(self, docs: list[Document]):
+        # Create a new index manager and index the documents
+        vector_store = self._get_vector_store()
+        record_manager = SQLRecordManager(
+            namespace="chroma",
+            db_url=f"sqlite:///{self.persist_directory}/record_manager_cache.sql",
+        )
+        logger.info("Created SQLRecordManager for index synchronization.")
+
+        record_manager.create_schema()
+
+        index_stats = index(
+            docs_source=docs,
+            record_manager=record_manager,
+            vector_store=vector_store,
+            cleanup="incremental",
+            source_id_key="source",
+            key_encoder="sha256",
+        )
+
+        logger.info(f"Index synchronization completed. Stats: {index_stats}")
+
+        return vector_store
+    
+    def get_sparse_retriever(self, docs: list[Document], k: int = 5) -> BM25Retriever:
+        if self.sparse_cache_directory.exists():
+            logger.info(f"Loading BM25 retriever from cache at {self.sparse_cache_directory}")
+            with open(self.sparse_cache_directory, "rb") as f:
+                retriever = pickle.load(f)
+        
+        else:
+            logger.info("Creating new BM25 retriever and caching it.")
+            retriever = BM25Retriever.from_documents(
+                documents=docs,
+            )
+            self.sparse_cache_directory.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.sparse_cache_directory, "wb") as f:
+                pickle.dump(retriever, f)
+
         retriever.k = k
         return retriever
-
-    # --- Base Embeddings ---
-    base_embeddings = OllamaEmbeddings(
-        model=embed_model,
-    )
-
-    # --- Embedding Cache ---
-    store = LocalFileStore(cache_directory)
-
-    cached_embeddings = CacheBackedEmbeddings.from_bytes_store(
-        underlying_embeddings=base_embeddings,
-        document_embedding_cache=store,
-        key_encoder="sha256"
-    )
-    logger.info(f"Initialized CacheBackedEmbeddings with cache directory: {cache_directory}")
-
-
-    # --- Vector Store (Chroma) ---
-    vector_stores = Chroma(
-        persist_directory=persist_directory,
-        embedding_function=cached_embeddings,
-    )
-    logger.info(f"Initialized Chroma vector store with persist directory: {persist_directory}")
-
-
-    namespace = "chroma"
-    record_manager = SQLRecordManager(
-        namespace=namespace,
-        db_url=f"sqlite:///{CHROMA_DB_DIR}/record_manager_cache.sql",
-    )
-    logger.info(f"Initialized SQLRecordManager with namespace: {namespace} and db_url: sqlite:///{CHROMA_DB_DIR}/record_manager_cache.sql")
-
-    record_manager.create_schema()
-
-    # Sync documents to vector store
-    index(
-        docs_source=docs,
-        record_manager=record_manager,
-        vector_store=vector_stores,
-        cleanup="incremental",
-        source_id_key="source",
-        key_encoder="sha256",
-    )
-    logger.info(f"Indexed {len(docs)} documents into the vector store")
-
-    search_kwargs = {
-        "k": k,
-    }
-
-    if search_type == "mmr":
-        search_kwargs["fetch_k"] = fetch_k
-        search_kwargs["lambda_mult"] = lambda_mult
     
-    return vector_stores.as_retriever(search_kwargs=search_kwargs, search_type=search_type)
+    def get_dense_retriever(
+        self,
+        docs: list[Document],
+        k: int = 5,
+        search_type: str = "similarity",
+        **kwargs
+    ):
+        vector_store = self._sync_index(docs)
+        search_kwargs = {
+            "k": k,
+            **kwargs
+        }
 
+        return vector_store.as_retriever(search_kwargs=search_kwargs, search_type=search_type)
+    
+    def get_hybrid_retriever(
+        self,
+        docs: list[Document],
+        k: int = 5,
+        weights: List[float] = [0.7, 0.3],
+    ):
+        dense = self.get_dense_retriever(docs, k=k)
+        sparse = self.get_sparse_retriever(docs, k=k)
+
+        return EnsembleRetriever(
+            retrievers=[dense, sparse],
+            weights=weights,
+            c=60,  # Number of documents to return before re-ranking
+        )
+    
 if __name__ == "__main__":
     loader = UniversityDocumentLoader(RAW_DOCS_DIR)
-    docs = loader.load_all_documents()
+    documents = loader.load_all_documents()
 
-    text_splitter = create_splitter(chunk_size=500, chunk_overlap=50)
-    split_docs = text_splitter.split_documents(docs)
-
-    retriever = create_retriever(
-        docs=split_docs,
+    retriever_component = RetrieverComponent(
         embed_model="hf.co/CompendiumLabs/bge-m3-gguf",
+        persist_directory=str(CHROMA_DB_DIR),
+        cache_directory=str(EMBEDDING_CACHE_DIR),
     )
 
-    print(retriever)
+    hybrid_retriever = retriever_component.get_hybrid_retriever(documents, k=5)
 
-# python -m src.rag_core.components.retriever 
+    query = "Điều kiện để đăng ký và được xét công nhận tốt nghiệp là gì?"
+    results = hybrid_retriever.invoke(query)
+
+    for i, doc in enumerate(results):
+        print(f"Result {i+1}:")
+        print(f"Content: {doc.page_content[:200]}...")  # Print first 200 characters
+        print(f"Metadata: {doc.metadata}")
+        print("-" * 50)
     
-
+    # python -m src.rag_core.components.retriever 
