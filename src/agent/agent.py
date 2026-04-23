@@ -6,8 +6,8 @@ from typing_extensions import TypedDict, Annotated, Any, List, Dict
 import json
 
 from ..rag_core import setup_logger
-from ..rag_core import UniversityDocumentLoader, create_splitter, create_retriever, generate_answer_agent
-from ..config import MAX_CONVERSATION_HISTORY
+from ..rag_core import UniversityDocumentLoader, create_splitter, RetrieverComponent, generate_answer_agent
+from ..config import MAX_CONVERSATION_HISTORY, RETRIEVER_TYPE
 
 class State(TypedDict):
     messages: Annotated[List[AnyMessage], add_messages]
@@ -57,15 +57,28 @@ def load_docs_node(state: State) -> State:
             "split_docs": [],
         }
     
-
-def vector_store_retriever_node(state: State) -> State:
-    try: 
-        retriever = create_retriever(
-        docs=state["split_docs"],
-        embed_model=state["embed_model"],
-        k=state["top_k_docs"],
+def retrieve_with_retriever_node(state: State) -> State:
+    try:
+        retriever_factory = RetrieverComponent(
+            embed_model=state["embed_model"],
         )
-        logger.info(f"Created retriever with top_k={state['top_k_docs']} using embed_model={state['embed_model']}")
+        logger.info(f"Initialized RetrieverComponent with embed model: {state['embed_model']}")
+
+        if RETRIEVER_TYPE == "dense":
+            retriever = retriever_factory.get_dense_retriever(
+                docs=state["split_docs"],
+                k=state["top_k_docs"],
+            )
+        elif RETRIEVER_TYPE == "sparse":
+            retriever = retriever_factory.get_sparse_retriever(
+                docs=state["split_docs"],
+                k=state["top_k_docs"],
+            )
+        else:
+            retriever = retriever_factory.get_hybrid_retriever(
+                docs=state["split_docs"],
+                k=state["top_k_docs"],
+            )
 
         retrieved_docs = retriever.invoke(state["query"])
         logger.info(f"Retrieved {len(retrieved_docs)} documents using retriever")

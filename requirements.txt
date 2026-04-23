@@ -9,8 +9,14 @@ dotenv
 chromadb
 langgraph-checkpoint-sqlite
 langchain-chroma
+passlib 
+bcrypt 
+python-multipart 
+sqlalchemy
+aiosqlite
 chainlit==2.11.0
 fastapi>=0.116.1,<1.0
 starlette>=0.47.2,<1.0
 anyio>=4,<5
 uvicorn>=0.35,<1.0
+rank-bm25
