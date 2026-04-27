@@ -8,3 +8,4 @@ data/
 .chainlit/
 .files
 chainlit.md
+database
