@@ -384,24 +384,24 @@ async def on_chat_start():
 
     starter_actions = [
         cl.Action(
-            name="starter_action",
+            name="Điều kiện xét tốt nghiệp",
             payload={"value": "Điều kiện để đăng ký và được xét công nhận tốt nghiệp là gì?"},
             label="🎓 Quy chế đào tạo",
         ),
         cl.Action(
-            name="starter_action",
+            name="Hướng dẫn xin giấy chứng nhận sinh viên tạm thời",
             payload={"value": "Hướng dẫn tôi cách xin giấy chứng nhận sinh viên tạm thời."},
             label="📄 Thủ tục hành chính",
         ),
         cl.Action(
-            name="starter_action",
+            name="Điều kiện xét học bổng",
             payload={"value": "Điều kiện để được xét học bổng là gì ?"},
             label="🎓 Học bổng",
         ),
     ]
 
     await cl.Message(
-        content=f"👋 Xin chào {_display_name()}! Bạn có thể đặt câu hỏi hoặc chọn một gợi ý bên dưới. Lịch sử hội thoại nằm ở thanh bên trái.",
+        content=f"👋 Xin chào {_display_name()}! Tôi là trợ lý ảo của đại học Bách khoa Hà Nội, tôi có thể giúp bạn trả lời các câu hỏi liên quan đến trường. Bạn muốn hỏi về điều gì?",
         author="Chatbot",
         actions=starter_actions,
     ).send()

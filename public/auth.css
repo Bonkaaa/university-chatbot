@@ -1,0 +1,17 @@
+.auth-register-container {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 0.9rem;
+  color: #475467;
+}
+
+.auth-register-link {
+  margin-left: 6px;
+  color: #0b6bcb;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.auth-register-link:hover {
+  text-decoration: underline;
+}

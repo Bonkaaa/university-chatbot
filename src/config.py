@@ -23,3 +23,6 @@ RETRIEVER_TYPE = "hybrid"  # Options: "dense", "sparse", "hybrid"
 # Config number
 MAX_CONVERSATION_HISTORY = 5
 
+## Backend
+DATABASE_DIR = ROOT_DIR / "database"
+
