@@ -13,3 +13,12 @@ def create_user(db: Session, email: str, password_hash: str, display_name: str) 
 
 def get_user_by_id(db: Session, user_id: int) -> User:
     return db.query(User).filter(User.id == user_id).first()
+
+def update_user(db: Session, user: User, display_name: str = None, password_hash: str = None) -> User:
+    if display_name is not None:
+        user.display_name = display_name
+    if password_hash is not None:
+        user.password_hash = password_hash
+    db.commit()
+    db.refresh(user)
+    return user

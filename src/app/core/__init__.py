@@ -1,5 +1,6 @@
 from .deps import get_db, get_current_user
 from .security import create_access_token, verify_password, hash_password
+from .local_storage import LocalPublicStorageClient
 
 __all__ = [
     "get_db",
@@ -7,4 +8,5 @@ __all__ = [
     "create_access_token",
     "verify_password",
     "hash_password",
+    "LocalPublicStorageClient",
 ]
