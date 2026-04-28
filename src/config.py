@@ -26,3 +26,8 @@ MAX_CONVERSATION_HISTORY = 5
 ## Backend
 DATABASE_DIR = ROOT_DIR / "database"
 
+## Public root
+PUBLIC_ROOT = ROOT_DIR / "public"
+
+# CONFIG = "$env:PYTHONPATH = C:\university_chatbot"
+

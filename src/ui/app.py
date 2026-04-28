@@ -1,17 +1,21 @@
 import sqlite3
+import re
 import uuid
 from html import escape
 from pathlib import Path
+from urllib.parse import quote
 
 import chainlit as cl
 from chainlit.config import config as chainlit_config
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
+from email_validator import EmailNotValidError, validate_email
 from fastapi import Form, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from src.agent import RAGAgent
 from src.app.core.security import hash_password, verify_password
+from src.app.core import LocalPublicStorageClient
 from src.app.crud.conversation_crud import create_conversation, list_conversations_for_user
 from src.app.crud.message_crud import create_message
 from src.app.crud.user_crud import create_user, get_user_by_email
@@ -113,7 +117,8 @@ def _init_chainlit_history_schema(db_file: Path) -> None:
 _init_chainlit_history_schema(chainlit_history_db)
 
 cl.data._data_layer = SQLAlchemyDataLayer(
-    conninfo=f"sqlite+aiosqlite:///{chainlit_history_db.as_posix()}"
+    conninfo=f"sqlite+aiosqlite:///{chainlit_history_db.as_posix()}",
+    storage_provider=LocalPublicStorageClient(),
 )
 
 # UI customizations
@@ -133,6 +138,35 @@ agent = RAGAgent(
     embed_model=EMBED_MODEL_NAME,
     main_model=MODEL_NAME,
 )
+
+
+PASSWORD_MIN_LENGTH = 8
+PASSWORD_REQUIREMENTS_MSG = (
+    "Mật khẩu phải có ít nhất 8 ký tự, gồm chữ hoa, chữ thường và chữ số."
+)
+
+
+def _validate_register_input(email: str, password: str, display_name: str) -> tuple[str, str | None]:
+    try:
+        normalized_email = validate_email(email.strip(), check_deliverability=False).email.lower()
+    except EmailNotValidError:
+        return "", "Email không hợp lệ. Vui lòng nhập đúng định dạng email."
+
+    cleaned_display_name = display_name.strip()
+    if not cleaned_display_name:
+        return "", "Tên hiển thị không được để trống."
+
+    if len(password) < PASSWORD_MIN_LENGTH:
+        return "", PASSWORD_REQUIREMENTS_MSG
+
+    has_upper = bool(re.search(r"[A-Z]", password))
+    has_lower = bool(re.search(r"[a-z]", password))
+    has_digit = bool(re.search(r"\d", password))
+
+    if not (has_upper and has_lower and has_digit):
+        return "", PASSWORD_REQUIREMENTS_MSG
+
+    return normalized_email, None
 
 
 # -----------------------------
@@ -208,7 +242,12 @@ async def process_register(
 ):
     db: Session = SessionLocal()
     try:
-        normalized_email = email.strip().lower()
+        normalized_email, validation_error = _validate_register_input(email, password, display_name)
+        if validation_error:
+            return HTMLResponse(
+                content=_build_register_html(validation_error, kind="error")
+            )
+
         if get_user_by_email(db, normalized_email):
             return HTMLResponse(
                 content=_build_register_html(
@@ -236,10 +275,12 @@ async def process_register(
 def _prioritize_register_route() -> None:
     routes = cl.server.app.router.routes
 
+    promote_paths = {"/register", "/profile", "/change-password"}
+
     promoted = []
     remaining = []
     for route in routes:
-        if getattr(route, "path", None) == "/register":
+        if getattr(route, "path", None) in promote_paths:
             promoted.append(route)
         else:
             remaining.append(route)
