@@ -1,0 +1,6 @@
+Run scraper to get data from website and save to json file. Then
+
+
+Run document loader to load data from json file, split into chunks and save to database. Finally, run retriever to test retrieval of relevant documents based on a query.
+
+

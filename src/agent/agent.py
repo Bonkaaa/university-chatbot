@@ -3,7 +3,6 @@ from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, RemoveM
 from langchain_core.documents import Document
 
 from typing_extensions import TypedDict, Annotated, Any, List, Dict
-import json
 
 from ..rag_core import setup_logger
 from ..rag_core import UniversityDocumentLoader, create_splitter, RetrieverComponent, generate_answer_agent
@@ -13,21 +12,13 @@ class State(TypedDict):
     messages: Annotated[List[AnyMessage], add_messages]
 
     query: str
-    queries: List[str]
     path_to_docs: str
-
-    chunk_size: int
-    chunk_overlap: int
 
     embed_model: str
     main_model: str
 
-    retriever: Any
-
     top_k_docs: int
-    top_k_queries: int
 
-    raw_docs: List[Document]
     split_docs: List[Document]
     retrieved_docs: List[Document]
 
@@ -40,14 +31,6 @@ def load_docs_node(state: State) -> State:
         loader = UniversityDocumentLoader(state["path_to_docs"])
         docs = loader.load_all_documents()
         logger.info(f"Loaded {len(docs)} documents from {state['path_to_docs']}")
-    #     return {
-    #         "raw_docs": docs,
-    #     }
-    # except Exception as e:
-    #     logger.error(f"Error occurred while loading documents: {e}")
-    #     return {
-    #         "raw_docs": [],
-    #     }
         return {
             "split_docs": docs, 
         }

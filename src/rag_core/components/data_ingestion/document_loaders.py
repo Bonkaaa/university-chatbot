@@ -187,10 +187,8 @@ class UniversityDocumentLoader:
         return all_documents
 
 if __name__ == "__main__":
-    # Example usage
     loader = UniversityDocumentLoader(RAW_DOCS_DIR)
     documents= loader.load_all_documents()
     print(f"Đã tạo ra {len(documents)} semantic chunks.")
-    print("\n---\n".join([f"Document ID: {doc.metadata.get('source', 'unknown_id')}\nContent: {doc.page_content[:500]}..." for doc in documents[:5]]))
 
         

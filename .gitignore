@@ -7,5 +7,7 @@ data/
 .env
 .chainlit/
 .files
-chainlit.md
 database
+test_scrape.py
+workingflow.txt
+testing.ipynb
