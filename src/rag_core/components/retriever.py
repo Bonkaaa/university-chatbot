@@ -1,7 +1,12 @@
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
 from langchain_core.documents import Document
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from langchain_community.retrievers import BM25Retriever
+from langchain_huggingface import HuggingFaceEndpointEmbeddings
 
 from langchain_classic.embeddings.cache import CacheBackedEmbeddings
 from langchain_classic.storage import LocalFileStore  
@@ -21,6 +26,8 @@ import pickle
 
 logger = setup_logger("retriever.log", "retriever")
 
+hf_token = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+
 
 class RetrieverComponent:
     def __init__(
@@ -34,9 +41,13 @@ class RetrieverComponent:
         self.cache_directory = Path(cache_directory)
         self.sparse_cache_directory = self.cache_directory / "bm25_cache.pkl"
 
-        # Initialize the retriever as None; it will be created when needed
-        base_embeddings = OllamaEmbeddings(
+        # # Initialize the retriever as None; it will be created when needed
+        # base_embeddings = OllamaEmbeddings(
+        #     model=embed_model,
+        # )
+        base_embeddings = HuggingFaceEndpointEmbeddings(
             model=embed_model,
+            huggingfacehub_api_token=hf_token,
         )
 
         self.store = LocalFileStore(str(self.cache_directory))
@@ -79,8 +90,8 @@ class RetrieverComponent:
 
         return vector_store
     
-    def get_sparse_retriever(self, docs: list[Document], k: int = 5) -> BM25Retriever:
-        if self.sparse_cache_directory.exists():
+    def get_sparse_retriever(self, docs: list[Document], k: int = 5, force_refresh: bool = False) -> BM25Retriever:
+        if self.sparse_cache_directory.exists() and not force_refresh:
             logger.info(f"Loading BM25 retriever from cache at {self.sparse_cache_directory}")
             with open(self.sparse_cache_directory, "rb") as f:
                 retriever = pickle.load(f)
@@ -117,9 +128,10 @@ class RetrieverComponent:
         docs: list[Document],
         k: int = 5,
         weights: List[float] = [0.7, 0.3],
+        force_refresh_sparse: bool = False,
     ):
         dense = self.get_dense_retriever(docs, k=k)
-        sparse = self.get_sparse_retriever(docs, k=k)
+        sparse = self.get_sparse_retriever(docs, k=k, force_refresh=force_refresh_sparse)
 
         return EnsembleRetriever(
             retrievers=[dense, sparse],
@@ -132,7 +144,7 @@ if __name__ == "__main__":
     documents = loader.load_all_documents()
 
     retriever_component = RetrieverComponent(
-        embed_model="hf.co/CompendiumLabs/bge-m3-gguf",
+        embed_model="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
         persist_directory=str(CHROMA_DB_DIR),
         cache_directory=str(EMBEDDING_CACHE_DIR),
     )
