@@ -2,10 +2,12 @@ __pycache__/
 *.pyc
 *.pyd
 logs/
-data/
+data/*
+!data/raw_documents/
+!data/raw_docs_for_scrape/
+
 .venv/
 .env
-.chainlit/
 .files
 database
 test_scrape.py

@@ -1,6 +1,10 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+from pathlib import Path
 from ..config import DATABASE_DIR
+
+# Ensure database directory exists
+Path(DATABASE_DIR).mkdir(parents=True, exist_ok=True)
 
 DATABASE_URL = f"sqlite:///{DATABASE_DIR}/university_chatbot.db"
 
