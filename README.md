@@ -1,7 +1,8 @@
-﻿# 🎓 Chatbot Đại Học - University Chatbot
+﻿# 🎓 Chatbot Đại Học - University Chatbot 
 
 Một ứng dụng chatbot AI tiên tiến được thiết kế để hỗ trợ sinh viên và người dùng trả lời các câu hỏi liên quan đến các chương trình đào tạo, quy định, thông tin tuyển sinh, và chính sách của trường đại học.
 
+[Link tới website deploy](https://university-chatbot-d4di.onrender.com)
 ## ✨ Tính Năng Chính
 
 - **RAG (Retrieval Augmented Generation)**: Kết hợp tìm kiếm mật độ (dense) và thưa thớt (sparse) để truy xuất thông tin chính xác
