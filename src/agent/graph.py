@@ -37,10 +37,10 @@ class RAGAgent:
 
         top_k_docs: int = 5,
         
-        split_docs: List[Document] =[],
-        retrieved_docs: List[Document] =[],
+        split_docs: List[Document] | None = None,
+        retrieved_docs: List[Document] | None = None,
     ):
-        conversation_db_path = Path(conversation_db_path) / "conversations_db.json"
+        conversation_db_path = Path(conversation_db_path) / "conversations_db.db"
 
         if not os.path.exists(conversation_db_path):
             # Create the database file if it doesn't exist
@@ -54,8 +54,8 @@ class RAGAgent:
         self.embed_model = embed_model
         self.main_model = main_model
         self.top_k_docs = top_k_docs
-        self.split_docs = split_docs
-        self.retrieved_docs = retrieved_docs
+        self.split_docs = split_docs or []
+        self.retrieved_docs = retrieved_docs or []
 
 
         self.builder = self._build_graph()

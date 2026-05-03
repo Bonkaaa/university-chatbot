@@ -26,6 +26,28 @@ class State(TypedDict):
 
 logger = setup_logger("agent.log", "agent")
 
+
+def _format_conversation_history(messages: List[AnyMessage], max_messages: int = MAX_CONVERSATION_HISTORY) -> str:
+    if not messages:
+        return "(không có lịch sử hội thoại)"
+
+    recent_messages = messages[-max_messages:]
+    lines = []
+    for message in recent_messages:
+        role = "Người dùng"
+        if isinstance(message, AIMessage):
+            role = "Trợ lý"
+        elif isinstance(message, HumanMessage):
+            role = "Người dùng"
+
+        content = getattr(message, "content", "")
+        if isinstance(content, list):
+            content = " ".join(str(part) for part in content)
+
+        lines.append(f"{role}: {str(content).strip()}")
+
+    return "\n".join(lines)
+
 def load_docs_node(state: State) -> State:
     try:
         loader = UniversityDocumentLoader(state["path_to_docs"])
@@ -75,10 +97,6 @@ def retrieve_with_retriever_node(state: State) -> State:
         }
 
 async def generate_answer_node(state: State) -> State:
-    user_message = f"""
-    Question from user: {state['query']}
-    Retrieved documents: {state['retrieved_docs']}
-    """
     # Process the message state
     messages = state.get("messages", [])
     delete_command = []
@@ -88,9 +106,10 @@ async def generate_answer_node(state: State) -> State:
         for msg in old_messages:
             delete_command.append(RemoveMessage(id=msg.id))
 
-    human_message = HumanMessage(content=user_message)
+    human_message = HumanMessage(content=state["query"])
 
     new_messages = [human_message]
+    conversation_history = _format_conversation_history(messages)
 
     # If no documents were retrieved, we can skip calling the answer generation agent and return a default response
     if not state["retrieved_docs"] or len(state["retrieved_docs"]) == 0:
@@ -114,6 +133,7 @@ async def generate_answer_node(state: State) -> State:
         agent_input = {
             "question": state["query"],
             "retrieved_docs": state["retrieved_docs"],
+            "conversation_history": conversation_history,
         }
 
         response_dict = {
