@@ -2,22 +2,31 @@ import sqlite3
 import uuid
 import jwt
 import os
+import subprocess
+import time
 from pathlib import Path
 from urllib.parse import unquote
 
 import chainlit as cl
+from dotenv import load_dotenv
 from chainlit.config import config as chainlit_config
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
-from fastapi import Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import Form, Request, UploadFile, File
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from src.agent import RAGAgent
 from src.app.core.security import hash_password, verify_password
 from src.app.core import LocalPublicStorageClient
+from src.app.models.document_metadata import DocumentMetadata
+# from src.app.models.user import User
+# from src.app.models.conversation import Conversation
+# from src.app.models.message import Message
+# from src.app.models.session import Session
 from src.app.crud.conversation_crud import create_conversation, list_conversations_for_user
 from src.app.crud.message_crud import create_message
 from src.app.crud.user_crud import create_user, get_user_by_email, get_user_by_id, update_user
+from src.app.crud.document_metadata_crud import create_document_metadata
 from src.app.db import Base, SessionLocal, engine
 from src.config import (
     CONVERSATION_DB_DIR,
@@ -26,7 +35,19 @@ from src.config import (
     RAW_DOCS_DIR,
     USER_CHAT_HISTORY_DATA,
 )
-from src.ui import build_change_password_html, build_error_html, build_profile_html, build_register_html, validate_register_input
+from src.ui import (
+    build_error_html,
+    build_change_password_html,
+    validate_register_input,
+    build_profile_html,
+    build_register_html,
+    build_admin_upload_html,
+    build_admin_dashboard_html,
+)
+from src.rag_core.utils import setup_logger
+
+logger = setup_logger("main.log", "main")
+load_dotenv()
 
 
 # -----------------------------
@@ -34,6 +55,42 @@ from src.ui import build_change_password_html, build_error_html, build_profile_h
 # -----------------------------
 Base.metadata.create_all(bind=engine)
 
+# Ensure there's an admin account for testing and management purposes
+@cl.on_app_startup
+async def ensure_admin_account():
+    logger.info("Startup hook ensure_admin_account triggered.")
+    admin_email = os.getenv("ADMIN_EMAIL", "").strip().lower()
+    admin_password = os.getenv("ADMIN_PASSWORD", "").strip()
+    admin_display_name = os.getenv("ADMIN_DISPLAY_NAME", "Admin").strip()
+
+    if not admin_email or not admin_password:
+        logger.warning(
+            "Skipping admin creation: missing ADMIN_EMAIL or ADMIN_PASSWORD. "
+            "ADMIN_EMAIL present=%s, ADMIN_PASSWORD present=%s",
+            bool(admin_email),
+            bool(admin_password),
+        )
+        return
+    
+    db: Session = SessionLocal()
+    try:
+        existing = get_user_by_email(db, admin_email)
+        if existing:
+            logger.info(f"Admin account with email {admin_email} already exists. Skipping creation.")
+            return
+        create_user(
+            db=db, 
+            email=admin_email, 
+            password_hash=hash_password(admin_password), 
+            display_name=admin_display_name, 
+            role="admin"
+        )
+        logger.info(f"Admin account created with email: {admin_email}")
+    except Exception:
+        logger.exception("Failed during ensure_admin_account.")
+        raise
+    finally:
+        db.close()
 
 # -----------------------------
 # 1) Init Chainlit history DB (for sidebar thread history)
@@ -146,12 +203,13 @@ def _decode_and_verify_jwt(token: str) -> dict | None:
     try:
         return jwt.decode(token, secret, algorithms=["HS256"])
     except Exception as e:
-        print("jwt verify failed:", repr(e))
+        logger.error("jwt verify failed:", exc_info=True)
         return None
 
 def _current_user_info_from_cookies(request: Request) -> tuple[str, str] | tuple[None, None]:
     token = request.cookies.get("token") or request.cookies.get("access_token")
     if not token:
+        logger.warning("No token found in cookies")
         return None, None
     
     try:
@@ -161,13 +219,15 @@ def _current_user_info_from_cookies(request: Request) -> tuple[str, str] | tuple
 
     try: 
         decoded_token = _decode_and_verify_jwt(token)
-        print("Decoded JWT token:", decoded_token)
+        logger.info("Decoded JWT token: %s", decoded_token)
         user_id = decoded_token.get("metadata", {}).get("user_id")
         email = decoded_token.get("metadata", {}).get("email") or decoded_token.get("sub")
-        if isinstance(email, str) or isinstance(user_id, (str, int)):
+        if isinstance(email, str) and isinstance(user_id, (str, int)):
             return user_id, email.strip().lower()
+        logger.warning("Invalid email or user_id from token. email=%s, user_id=%s", email, user_id)
+        return None, None
     except Exception as e:
-        print("Error occurred while decoding JWT token:", repr(e))
+        logger.error("Error occurred while decoding JWT token: %s", repr(e))
         return None, None
 
 def _current_user_id() -> int | None:
@@ -184,6 +244,17 @@ def _current_user_id() -> int | None:
         return int(candidate)
     except (TypeError, ValueError):
         return None
+    
+def _current_user_role() -> str | None:
+    user_obj = cl.user_session.get("user")
+    if not user_obj:
+        return None
+
+    metadata = getattr(user_obj, "metadata", {}) or {}
+    role = metadata.get("role")
+    if isinstance(role, str):
+        return role.strip().lower()
+    return None
 
 
 def _display_name() -> str:
@@ -251,6 +322,19 @@ async def _generate_assistant_answer(user_text: str, thread_id: str) -> str:
 
 ## Register routes
 
+@cl.server.app.get("/api/me")
+async def get_me(request: Request):
+    user_id, email = _current_user_info_from_cookies(request)
+    if not user_id and not email:
+        return JSONResponse(content={"role": None})
+
+    db: Session = SessionLocal()
+    try:
+        user = get_user_by_id(db, user_id) if user_id else get_user_by_email(db, email.strip().lower())
+        return JSONResponse(content={"role": user.role if user else None})
+    finally:
+        db.close()
+
 @cl.server.app.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
     return HTMLResponse(content=build_register_html())
@@ -311,6 +395,7 @@ async def auth_callback(username: str, password: str):
                 "user_id": user_obj.id,
                 "email": user_obj.email,
                 "display_name": user_obj.display_name or user_obj.email,
+                "role": user_obj.role,
             },
         )
     finally:
@@ -423,13 +508,48 @@ async def change_password(
     finally:
         db.close()
 
+# @cl.server.app.get("/")
+# async def root_redirect(Request: Request):
+#     user_id, email = _current_user_info_from_cookies(Request)
+#     if not user_id and not email:
+#         return RedirectResponse(url="/login")
+    
+#     db: Session = SessionLocal()
+#     try:
+#         user = get_user_by_id(db, user_id) if user_id else get_user_by_email(db, email.strip().lower())
+
+#         if user and user.role == "admin":
+#             return RedirectResponse(url="/admin")
+#     finally:
+#         db.close()
+    
+#     return RedirectResponse(url="/")
+
+@cl.server.app.middleware("http")
+async def admin_root_redirect(request: Request, call_next):
+    if request.url.path == "/":
+        if request.query_params.get("chat") == "1":
+            return await call_next(request)
+
+
+        user_id, email = _current_user_info_from_cookies(request)
+        if user_id or email:
+            db: Session = SessionLocal()
+            try:
+                user = get_user_by_id(db, user_id) if user_id else get_user_by_email(db, email.strip().lower())
+                if user and user.role == "admin":
+                    return RedirectResponse(url="/admin")
+            finally:
+                db.close()
+    return await call_next(request)
+
 
 ## Prioritize the /register, /profile, and /change-password routes so they are matched before the default Chainlit auth routes
 def _prioritize_register_route() -> None:
     routes = cl.server.app.router.routes
 
     # Các đường dẫn cần ưu tiên để tránh catch-all của Chainlit trả về trang chính
-    promote_paths = {"/register", "/profile", "/change-password"}
+    promote_paths = {"/register", "/profile", "/change-password", "/admin", "/admin/upload", "/api/me"}
 
     promoted = []
     remaining = []
@@ -451,13 +571,103 @@ def _prioritize_register_route() -> None:
     cl.server.app.router.routes = remaining[:insert_at] + promoted + remaining[insert_at:]
 
 
-_prioritize_register_route()
+# -----------------------------
+# 5) Admin routes (for uploading documents and managing users)
+# -----------------------------
+
+## Admin dashboard route
+@cl.server.app.get("/admin", response_class=HTMLResponse)
+async def admin_dashboard_page(request: Request):
+    user_id, email = _current_user_info_from_cookies(request)
+    if not user_id and not email:
+        return HTMLResponse(build_error_html("Không xác định được người dùng. Vui lòng đăng nhập lại."))
+    
+    db: Session = SessionLocal()
+    try:
+        user = get_user_by_id(db, user_id) if user_id else get_user_by_email(db, email.strip().lower())
+
+        if not user or user.role != "admin":
+            return HTMLResponse(build_error_html("Bạn không có quyền truy cập trang này."))
+        return HTMLResponse(build_admin_dashboard_html(user.display_name or user.email))
+    finally:
+        db.close()
+
+        
+## Admin upload document route
+@cl.server.app.get("/admin/upload", response_class=HTMLResponse)
+async def admin_upload_page(request: Request):
+    user_id, email = _current_user_info_from_cookies(request)
+    if not user_id and not email:
+        return HTMLResponse(build_error_html("Không xác định được người dùng. Vui lòng đăng nhập lại."))
+    
+    db: Session = SessionLocal()
+    try:
+        user = get_user_by_id(db, user_id) if user_id else get_user_by_email(db, email.strip().lower())
+
+        if not user or user.role != "admin":
+            return HTMLResponse(build_error_html("Bạn không có quyền truy cập trang này."))
+        return HTMLResponse(build_admin_upload_html())
+    finally:
+        db.close()
+
+@cl.server.app.post("/admin/upload", response_class=HTMLResponse)
+async def admin_upload_document(request: Request, file: UploadFile = File(...)):
+    user_id, email = _current_user_info_from_cookies(request)
+    if not user_id and not email:
+        return HTMLResponse(build_error_html("Không xác định được người dùng. Vui lòng đăng nhập lại."))
+    
+    db: Session = SessionLocal()
+    try:
+        user = get_user_by_id(db, user_id) if user_id else get_user_by_email(db, email.strip().lower())
+
+        if not user or user.role != "admin":
+            return HTMLResponse(build_error_html("Bạn không có quyền truy cập trang này."))
+        
+        filename = (file.filename or "uploaded_file").strip().replace(" ", "_")
+        if not filename:
+            return HTMLResponse(build_admin_upload_html("Tên file không hợp lệ.", kind="error"))
+        
+        ext = os.path.splitext(filename)[1].lower()
+
+        if ext not in [".pdf", ".md", "docx"]:
+            return HTMLResponse(build_admin_upload_html("Định dạng file không được hỗ trợ. Vui lòng tải lên file PDF, Markdown (.md), hoặc Word (.docx).", kind="error"))
+        
+        os.makedirs(RAW_DOCS_DIR, exist_ok=True)
+        save_path = os.path.join(RAW_DOCS_DIR, f"{uuid.uuid4()}_{filename}")
+
+        content = await file.read()
+        with open(save_path, "wb") as f:
+            f.write(content)
+
+        # Save metadata to DB
+        create_document_metadata(
+            db=db,
+            title=os.path.splitext(filename)[0],
+            file_name=filename,
+            file_type=ext,
+            file_size=len(content),
+            uploaded_by=user.id,
+        )
+
+        # Run document loaders to process the newly uploaded document and add to vector store
+        subprocess.run(["python", "-m", "src.rag_core.components.data_ingestion.document_loader"], check=True)
+
+        # Re-sync the agent's index to include the new document
+        subprocess.run(["python", "-m", "src.rag_core.components.retriever"], check=True)
+
+
+        return HTMLResponse(build_admin_upload_html("Tải lên thành công và tài liệu đã được xử lý.", kind="success"))
+    except Exception as e:
+        logger.error("Error during file upload: %s", repr(e))
+        return HTMLResponse(build_admin_upload_html("Có lỗi xảy ra trong quá trình tải lên. Vui lòng thử lại.", kind="error"))
+    finally:
+        db.close()
 
 
 
 
 # -----------------------------
-# 5) Chat handlers
+# 6) Chat handlers
 # -----------------------------
 @cl.on_chat_start
 async def on_chat_start():
@@ -526,7 +736,14 @@ async def on_message(message: cl.Message):
     finally:
         db.close()
 
+    # Set up time measurement for assistant response time
+    start_time = time.perf_counter()
+
     assistant_text = await _generate_assistant_answer(message.content, thread_id)
+
+    # Measure response time and update the last assistant message in DB
+    end_time = time.perf_counter()
+    response_time = int((end_time - start_time) * 1000)  # Convert to milliseconds
 
     db = SessionLocal()
     try:
@@ -538,6 +755,7 @@ async def on_message(message: cl.Message):
                 user_id=None,
                 role="assistant",
                 content=assistant_text,
+                response_time=response_time
             )
     finally:
         db.close()
@@ -572,3 +790,7 @@ async def on_chat_resume(thread: dict):
         cl.user_session.set("conversation_id", conversation_id)
     finally:
         db.close()
+
+
+# Run after all app routes are declared so promoted paths actually exist.
+_prioritize_register_route()

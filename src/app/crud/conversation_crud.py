@@ -13,3 +13,6 @@ def get_conversation_by_id(db: Session, conversation_id: int) -> Conversation:
 
 def list_conversations_for_user(db: Session, user_id: int) -> list[Conversation]:
     return db.query(Conversation).filter(Conversation.user_id == user_id).all()
+
+def get_number_of_conversations(db: Session) -> int:
+    return db.query(Conversation).count()

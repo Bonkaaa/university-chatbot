@@ -181,5 +181,12 @@ icon_url = "/public/images/password.png"
 url = "/change-password"
 target = "_self"
 
+[[UI.header_links]]
+name = "Admin"
+display_name = "Admin"
+icon_url = "/public/images/admin.png"
+url = "/admin"
+target = "_self"
+
 [meta]
 generated_by = "custom"

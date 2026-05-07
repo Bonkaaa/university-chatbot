@@ -12,4 +12,5 @@ class Message(Base):
     content = Column(Text, nullable=False)
     sequence_no = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    response_time = Column(Integer, nullable=True)  # in milliseconds, only for assistant messages
 

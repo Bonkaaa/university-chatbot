@@ -149,15 +149,11 @@ if __name__ == "__main__":
         cache_directory=str(EMBEDDING_CACHE_DIR),
     )
 
-    hybrid_retriever = retriever_component.get_hybrid_retriever(documents, k=5)
+    hybrid_retriever = retriever_component.get_hybrid_retriever(
+        docs=documents, 
+        k=5,
+        weights=[0.7, 0.3],
+        force_refresh_sparse=True
+    )
 
-    query = "Điều kiện để đăng ký và được xét công nhận tốt nghiệp là gì?"
-    results = hybrid_retriever.invoke(query)
-
-    for i, doc in enumerate(results):
-        print(f"Result {i+1}:")
-        print(f"Content: {doc.page_content[:200]}...")  # Print first 200 characters
-        print(f"Metadata: {doc.metadata}")
-        print("-" * 50)
-    
-    # python -m src.rag_core.components.retriever 
+    logger.info("Sync process completed. Ready to retrieve documents.")

@@ -16,7 +16,8 @@ DOCS_FOR_SCRAPE_DIR = DATA_DIR / "raw_docs_for_scrape"
 # ----------------------------------
 
 ## Agent
-MODEL_NAME = "xiaomi/mimo-v2-omni"
+# MODEL_NAME = "xiaomi/mimo-v2-omni"
+MODEL_NAME = "openai/gpt-oss-120b"
 # EMBED_MODEL_NAME = "hf.co/CompendiumLabs/bge-m3-gguf:latest"
 EMBED_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 # ----------------------------------

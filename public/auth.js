@@ -43,173 +43,90 @@
   }
 })();
 
-// function getEmailFromSomewhere() {
-//   // 1) Thử lấy từ global chainlit.user (cách Chainlit lưu user info)
-//   try {
-//     if (window?.chainlit?.user) {
-//       const user = window.chainlit.user;
-//       // Kiểm tra metadata.email (nơi backend lưu thông tin)
-//       if (user.metadata?.email) return user.metadata.email;
-//       if (user.email) return user.email;
-//       if (user.identifier) {
-//         // identifier có thể là user ID, thử parse
-//         console.log("Found user.identifier:", user.identifier);
-//       }
-//     }
-//   } catch (e) {
-//     console.log("Error accessing chainlit.user:", e);
-//   }
+(function redirectAdminAfterLogin() {
+  const redirectedFlag = "admin_redirected_after_login";
 
-//   // 2) Thử lấy từ localStorage (Chainlit có thể lưu user info ở đây)
-//   try {
-//     const lsKeys = Object.keys(localStorage);
-//     for (const k of lsKeys) {
-//       const v = localStorage.getItem(k);
-//       if (!v || v.length > 5000) continue; // Bỏ qua các value quá dài
-      
-//       // Tìm email trực tiếp
-//       if (v.includes("@") && v.includes(".") && v.length < 200) {
-//         const match = v.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-//         if (match) {
-//           console.log("Found email in localStorage[" + k + "]:", match[0]);
-//           return match[0];
-//         }
-//       }
-      
-//       // Thử parse JSON
-//       try {
-//         const obj = JSON.parse(v);
-//         if (obj?.email) return obj.email;
-//         if (obj?.user?.email) return obj.user.email;
-//         if (obj?.user?.metadata?.email) return obj.user.metadata.email;
-//         if (obj?.metadata?.email) return obj.metadata.email;
-//       } catch {}
-//     }
-//   } catch (e) {
-//     console.log("Error accessing localStorage:", e);
-//   }
+  function tryRedirect() {
+    try{
+      const user = window?.chainlit?.user;
+      const role = user?.metadata?.role;
 
-//   // 3) Thử từ cookies (username có thể được lưu ở đây)
-//   try {
-//     const cookies = document.cookie.split(";");
-//     for (const cookie of cookies) {
-//       const [name, value] = cookie.trim().split("=");
-//       if ((name.toLowerCase().includes("email") || name.toLowerCase().includes("user")) && value) {
-//         const decoded = decodeURIComponent(value);
-//         if (decoded.includes("@")) {
-//           const match = decoded.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-//           if (match) return match[0];
-//         }
-//       }
-//     }
-//   } catch (e) {
-//     console.log("Error accessing cookies:", e);
-//   }
+      if (role === "admin" && !sessionStorage.getItem(redirectedFlag)) {
+        sessionStorage.setItem(redirectedFlag, "true");
+        window.location.href = "/admin";
+      }
+    }
+    catch (e) {
+      console.error("Error during admin redirect:", e);
+    }
+  }
 
-//   console.log("Could not find email - localStorage keys:", Object.keys(localStorage));
-//   console.log("window.chainlit:", window.chainlit);
-//   return null;
-// }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", tryRedirect);
+  } else {
+    tryRedirect();
+  }
+})();
 
-// function toValidUserId(value) {
-//   if (value === null || value === undefined) return null;
-//   const raw = String(value).trim().toLowerCase();
-//   if (!raw || raw === "null" || raw === "undefined" || raw === "nan") return null;
-//   const num = Number(raw);
-//   if (!Number.isInteger(num) || num <= 0) return null;
-//   return num;
-// }
+function getCookie(name) {
+  const match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
+  return match ? decodeURIComponent(match[2]) : null;
+}
 
-// function getUserIdFromSomewhere() {
-//   // 1) Ưu tiên chainlit.user.metadata.user_id hoặc identifier
-//   try {
-//     const user = window?.chainlit?.user;
-//     if (user) {
-//       const fromMetadata = user?.metadata?.user_id;
-//       const idFromMetadata = toValidUserId(fromMetadata);
-//       if (idFromMetadata !== null) return idFromMetadata;
-//       const idFromIdentifier = toValidUserId(user.identifier);
-//       if (idFromIdentifier !== null) return idFromIdentifier;
-//     }
-//   } catch (e) {
-//     console.log("Error accessing user_id from chainlit.user:", e);
-//   }
+function parseJwt(token) {
+  try {
+    const payload = token.split(".")[1];
+    return JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+  } catch {
+    return null;
+  }
+}
 
-//   // 2) Fallback: thử parse JSON trong localStorage
-//   try {
-//     const lsKeys = Object.keys(localStorage);
-//     for (const k of lsKeys) {
-//       const v = localStorage.getItem(k);
-//       if (!v || v.length > 5000) continue;
-//       try {
-//         const obj = JSON.parse(v);
-//         const candidate =
-//           obj?.user_id ??
-//           obj?.user?.id ??
-//           obj?.user?.metadata?.user_id ??
-//           obj?.metadata?.user_id ??
-//           obj?.identifier;
-//         const parsed = toValidUserId(candidate);
-//         if (parsed !== null) return parsed;
-//       } catch {}
-//     }
-//   } catch (e) {
-//     console.log("Error accessing localStorage for user_id:", e);
-//   }
+async function getRoleFromApi() {
+  try {
+    const res = await fetch("/api/me", {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    });
 
-//   return null;
-// }
+    console.log("api/me status:", res.status);
 
-// function buildUserScopedUrl(path) {
-//   const userId = getUserIdFromSomewhere();
-//   if (userId !== null) {
-//     return `${path}?user_id=${encodeURIComponent(String(userId))}`;
-//   }
+    if (!res.ok) return null;
+    const data = await res.json();
+    console.log("api/me data:", data);
+    return data?.role ? String(data.role).trim().toLowerCase() : null;
+  } catch (e) {
+    console.error("api/me error", e);
+    return null;
+  }
+}
 
-//   const email = getEmailFromSomewhere();
-//   if (email) {
-//     return `${path}?email=${encodeURIComponent(email)}`;
-//   }
+async function syncAdminLinkVisibility() {
+  const adminLink = document.querySelector('a[href="/admin"]');
+  if (!adminLink) return;
 
-//   return path;
-// }
+  const role = await getRoleFromApi();
 
-// function goProfile() {
-//   window.location.href = buildUserScopedUrl("/profile");
-// }
+  // Unknown role, keep the link hidden (or removed) until we can confirm it's admin. This prevents flashing the admin link for non-admin users on page load.
+  if (!role) return;
 
-// function goChangePassword() {
-//   window.location.href = buildUserScopedUrl("/change-password");
-// }
+  if (role === "admin") {
+    // Assure the link is visible for admins. In case it was hidden by default or by previous checks.
+    adminLink.style.display = "";
+    if (adminLink.parentElement) adminLink.parentElement.style.display = "";
+  } else {
+    // Not admin, remove the link from DOM to prevent any access.
+    const container = adminLink.closest("li") || adminLink.parentElement || adminLink;
+    container.remove();
+  }
+}
 
-// // Ví dụ: gắn vào button của bạn (tùy bạn tạo button bằng cách nào)
-// document.addEventListener("click", (e) => {
-//   const t = e.target;
-//   if (t?.id === "btnProfile") {
-//     e.preventDefault();
-//     goProfile();
-//   }
-//   if (t?.id === "btnChangePassword") {
-//     e.preventDefault();
-//     goChangePassword();
-//   }
-// });
+(function watchAdminLink() {
+  syncAdminLinkVisibility();
+  window.addEventListener("load", syncAdminLinkVisibility);
+  document.addEventListener("DOMContentLoaded", syncAdminLinkVisibility);
 
-// // Intercept header links để thêm email query param
-// document.addEventListener("click", (e) => {
-//   const link = e.target.closest("a");
-//   if (!link) return;
-
-//   const href = link.getAttribute("href");
-//   if (!href) return;
-
-//   const parsed = new URL(href, window.location.origin);
-//   // Kiểm tra nếu là link /profile hoặc /change-password từ header
-//   if (parsed.pathname === "/profile" || parsed.pathname === "/change-password") {
-//     e.preventDefault();
-
-//     const newUrl = buildUserScopedUrl(parsed.pathname);
-//     console.log("Redirecting to:", newUrl);
-//     window.location.href = newUrl;
-//   }
-// });
+  const observer = new MutationObserver(syncAdminLinkVisibility);
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+})();

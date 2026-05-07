@@ -209,7 +209,7 @@
       "button": "Cuộc trò chuyện mới",
       "dialog": {
         "title": "Tạo cuộc trò chuyện mới",
-        "description": "Thao tác này sẽ xóa lịch sử trò chuyện hiện tại. Bạn có chắc chắn muốn tiếp tục không?",
+        "description": "Thao tác này sẽ tạo mới một cuộc trò chuyện. Bạn có chắc chắn muốn tiếp tục không?",
         "tooltip": "Cuộc trò chuyện mới"
       }
     },

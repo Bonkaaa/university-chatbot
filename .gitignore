@@ -13,3 +13,4 @@ database
 test_scrape.py
 workingflow.txt
 testing.ipynb
+drop_table.py

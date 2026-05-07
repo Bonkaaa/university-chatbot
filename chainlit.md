@@ -1,8 +1,8 @@
-# Chào mừng đến với Chatbot Đại học Bách khoa Hà Nội! 🚀🤖
+# Chào mừng đến với HUST Chatbot - Chatbot Đại học Bách khoa Hà Nội! 🚀🤖
 
 Xin chào bạn! 👋 
 
-Đây là một trợ lý AI được thiết kế để hỗ trợ bạn trả lời các câu hỏi liên quan đến các chương trình đào tạo, quy định, và thông tin đại học.
+Tôi là **HUST Chatbot**, một trợ lý AI được thiết kế để hỗ trợ bạn trả lời các câu hỏi liên quan đến các chương trình đào tạo, quy định, và thông tin đại học.
 
 ## Cách sử dụng 💬
 
