@@ -18,13 +18,23 @@ def create_message(db: Session, conversation_id: int, user_id: int | None, role:
     db.refresh(msg)
     return msg
 
-def list_messages(db: Session, conversation_id: int):
-    return (
+def list_assistant_messages(db: Session, conversation_id: int):
+    # return (
+    #     db.query(Message)
+    #     .filter(Message.conversation_id == conversation_id)
+    #     .order_by(Message.sequence_no.asc())
+    #     .all()
+    # )
+    
+    # Get assistant message 
+    assistant_messages = (
         db.query(Message)
-        .filter(Message.conversation_id == conversation_id)
+        .filter(Message.conversation_id == conversation_id, Message.role == 'assistant')
         .order_by(Message.sequence_no.asc())
         .all()
     )
+    return assistant_messages
+
 
 # Calculate the average message of a conversation then return the average message of all conversations
 def get_average_message_per_conversation(db: Session):

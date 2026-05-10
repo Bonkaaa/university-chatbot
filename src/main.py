@@ -14,6 +14,7 @@ from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from fastapi import Form, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
+from langchain_core.messages import HumanMessage, AIMessage
 
 from src.agent import RAGAgent
 from src.app.core.security import hash_password, verify_password
@@ -24,7 +25,7 @@ from src.app.models.document_metadata import DocumentMetadata
 # from src.app.models.message import Message
 # from src.app.models.session import Session
 from src.app.crud.conversation_crud import create_conversation, list_conversations_for_user
-from src.app.crud.message_crud import create_message
+from src.app.crud.message_crud import create_message, list_assistant_messages
 from src.app.crud.user_crud import create_user, get_user_by_email, get_user_by_id, update_user
 from src.app.crud.document_metadata_crud import create_document_metadata
 from src.app.db import Base, SessionLocal, engine
@@ -102,67 +103,75 @@ chainlit_history_db = Path(USER_CHAT_HISTORY_DATA) / "chat_history.db"
 def _init_chainlit_history_schema(db_file: Path) -> None:
     ddl = """
     CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      identifier TEXT UNIQUE,
-      "createdAt" TEXT,
-      metadata TEXT
+    "id" UUID PRIMARY KEY,
+    "identifier" TEXT NOT NULL UNIQUE,
+    "metadata" JSONB NOT NULL,
+    "createdAt" TEXT
     );
 
     CREATE TABLE IF NOT EXISTS threads (
-      id TEXT PRIMARY KEY,
-      "createdAt" TEXT,
-      name TEXT,
-      "userId" TEXT,
-      "userIdentifier" TEXT,
-      tags TEXT,
-      metadata TEXT
+        "id" UUID PRIMARY KEY,
+        "createdAt" TEXT,
+        "name" TEXT,
+        "userId" UUID,
+        "userIdentifier" TEXT,
+        "tags" TEXT[],
+        "metadata" JSONB,
+        FOREIGN KEY ("userId") REFERENCES users("id") ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS steps (
-      id TEXT PRIMARY KEY,
-      name TEXT,
-      type TEXT,
-      "threadId" TEXT,
-      "parentId" TEXT,
-      streaming INTEGER,
-      "waitForAnswer" INTEGER,
-      "isError" INTEGER,
-      metadata TEXT,
-      tags TEXT,
-      input TEXT,
-      output TEXT,
-      "createdAt" TEXT,
-      start TEXT,
-      "end" TEXT,
-      generation TEXT,
-      "showInput" TEXT,
-      language TEXT
+        "id" UUID PRIMARY KEY,
+        "name" TEXT NOT NULL,
+        "type" TEXT NOT NULL,
+        "threadId" UUID NOT NULL,
+        "parentId" UUID,
+        "streaming" BOOLEAN NOT NULL,
+        "waitForAnswer" BOOLEAN,
+        "isError" BOOLEAN,
+        "metadata" JSONB,
+        "tags" TEXT[],
+        "input" TEXT,
+        "output" TEXT,
+        "createdAt" TEXT,
+        "command" TEXT,
+        "start" TEXT,
+        "end" TEXT,
+        "generation" JSONB,
+        "showInput" TEXT,
+        "language" TEXT,
+        "indent" INT,
+        "defaultOpen" BOOLEAN,
+        "modes" JSONB,
+        "autoCollapse" BOOLEAN,
+        FOREIGN KEY ("threadId") REFERENCES threads("id") ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS elements (
-      id TEXT PRIMARY KEY,
-      "threadId" TEXT,
-      type TEXT,
-      "chainlitKey" TEXT,
-      url TEXT,
-      "objectKey" TEXT,
-      name TEXT,
-      display TEXT,
-      size TEXT,
-      language TEXT,
-      page INTEGER,
-      "forId" TEXT,
-      mime TEXT,
-      props TEXT,
-      "autoPlay" INTEGER,
-      "playerConfig" TEXT
+        "id" UUID PRIMARY KEY,
+        "threadId" UUID,
+        "type" TEXT,
+        "url" TEXT,
+        "chainlitKey" TEXT,
+        "name" TEXT NOT NULL,
+        "display" TEXT,
+        "objectKey" TEXT,
+        "size" TEXT,
+        "page" INT,
+        "language" TEXT,
+        "forId" UUID,
+        "mime" TEXT,
+        "props" JSONB,
+        FOREIGN KEY ("threadId") REFERENCES threads("id") ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS feedbacks (
-      id TEXT PRIMARY KEY,
-      "forId" TEXT,
-      value INTEGER,
-      comment TEXT
+        "id" UUID PRIMARY KEY,
+        "forId" UUID NOT NULL,
+        "threadId" UUID NOT NULL,
+        "value" INT NOT NULL,
+        "comment" TEXT,
+        FOREIGN KEY ("threadId") REFERENCES threads("id") ON DELETE CASCADE
     );
     """
     with sqlite3.connect(db_file) as conn:
@@ -172,10 +181,10 @@ def _init_chainlit_history_schema(db_file: Path) -> None:
 
 _init_chainlit_history_schema(chainlit_history_db)
 
-cl.data._data_layer = SQLAlchemyDataLayer(
-    conninfo=f"sqlite+aiosqlite:///{chainlit_history_db.as_posix()}",
-    storage_provider=LocalPublicStorageClient(),
-)
+
+@cl.data_layer
+def get_data_layer():
+    return SQLAlchemyDataLayer(conninfo=f"sqlite+aiosqlite:///{chainlit_history_db.as_posix()}", storage_provider=LocalPublicStorageClient())
 
 # UI customizations
 chainlit_config.ui.default_sidebar_state = "open"
@@ -219,7 +228,6 @@ def _current_user_info_from_cookies(request: Request) -> tuple[str, str] | tuple
 
     try: 
         decoded_token = _decode_and_verify_jwt(token)
-        logger.info("Decoded JWT token: %s", decoded_token)
         user_id = decoded_token.get("metadata", {}).get("user_id")
         email = decoded_token.get("metadata", {}).get("email") or decoded_token.get("sub")
         if isinstance(email, str) and isinstance(user_id, (str, int)):
@@ -266,7 +274,11 @@ def _display_name() -> str:
 
 
 def _thread_id() -> str:
-    thread_id = cl.user_session.get("id")
+    if cl.context.session.thread_id:
+        return str(cl.context.session.thread_id)
+
+    thread_id = None
+
     if not thread_id:
         thread_id = cl.user_session.get("thread_id")
     if not thread_id:
@@ -291,29 +303,28 @@ def _get_or_create_conversation_for_thread(db: Session, user_id: int, thread_id:
 
 
 async def _generate_assistant_answer(user_text: str, thread_id: str) -> str:
-    streamed_message = cl.Message(content="", author="Chatbot")
-    await streamed_message.send()
-
     final_text = ""
     final_answer = None
 
-    async for event in agent.astream_chat(user_text, thread_id):
-        if event.get("type") == "token":
-            token = event.get("content", "")
-            if token:
-                final_text += token
-                await streamed_message.stream_token(token)
-        elif event.get("type") == "final":
-            final_answer = event.get("final_answer")
+    async with cl.Step(name="Chatbot", type="assistant_message") as step:
+        step.output = ""
+        
+        async for event in agent.astream_chat(user_text, thread_id):
+            if event.get("type") == "token":
+                token = event.get("content", "")
+                if token:
+                    final_text += token
+                    await step.stream_token(token)
+            elif event.get("type") == "final":
+                final_answer = event.get("final_answer")
 
-    if not final_text and isinstance(final_answer, dict):
-        final_text = final_answer.get("answer", "") or ""
+        if not final_text and isinstance(final_answer, dict):
+            final_text = final_answer.get("answer", "") or ""
+        if not final_text:
+            final_text = "Xin lỗi, tôi chưa thể tạo câu trả lời lúc này."
 
-    if not final_text:
-        final_text = "Xin lỗi, tôi chưa thể tạo câu trả lời lúc này."
-        streamed_message.content = final_text
+        step.output = final_text
 
-    await streamed_message.update()
     return final_text
 
 # -----------------------------
@@ -718,6 +729,11 @@ async def on_message(message: cl.Message):
         return
 
     thread_id = _thread_id()
+    display_name = _display_name()
+
+    # Ensure message has proper author set for Chainlit tracking
+    if not message.author:
+        message.author = display_name
 
     db: Session = SessionLocal()
     try:
@@ -768,7 +784,7 @@ async def on_starter_action(action: cl.Action):
     if not query_text:
         return
 
-    await cl.Message(content=query_text, author="Bạn").send()
+    await cl.Message(content=query_text, author=_display_name(), type="user_message").send()
     await on_message(cl.Message(content=query_text))
 
 
@@ -782,14 +798,34 @@ async def on_chat_resume(thread: dict):
     if not thread_id:
         return
 
-    cl.user_session.set("thread_id", thread_id)
-
     db: Session = SessionLocal()
     try:
         conversation_id = _get_or_create_conversation_for_thread(db, user_id, thread_id)
+        
+        cl.user_session.set("thread_id", thread_id)
         cl.user_session.set("conversation_id", conversation_id)
     finally:
         db.close()
+    
+    # # Put context into agent
+    # steps = thread.get("steps", [])
+
+    # messages = []
+
+    # for step in steps:
+    #     content = step.get("output", "")
+
+    #     if not content:
+    #         continue
+
+    #     step_type = step.get("type", "")
+        
+    #     if step_type == "user_message":
+    #         messages.append(HumanMessage(content=content))
+    #     elif step_type == "assistant_message":
+    #         messages.append(AIMessage(content=content))
+
+    # cl.user_session.set("messages", messages)
 
 
 # Run after all app routes are declared so promoted paths actually exist.
