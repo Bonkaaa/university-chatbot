@@ -27,8 +27,8 @@ from src.app.models.user import User
 # from src.app.models.conversation import Conversation
 # from src.app.models.message import Message
 # from src.app.models.session import Session
-from src.app.crud.conversation_crud import create_conversation, list_conversations_for_user
-from src.app.crud.message_crud import create_message, list_assistant_messages
+from src.app.crud.conversation_crud import create_conversation, list_conversations_for_user, get_conversation_by_id, get_number_of_conversations, get_total_conversations_today
+from src.app.crud.message_crud import create_message, list_assistant_messages, get_average_message_per_conversation, get_average_response_time, get_messages_by_hour_today, get_total_messages_today
 from src.app.crud.user_crud import (
     create_user,
     get_user_by_email,
@@ -38,12 +38,14 @@ from src.app.crud.user_crud import (
     get_number_of_active_users,
     list_users,
     deactivate_user,
+    get_total_users_today
 )
 from src.app.crud.document_metadata_crud import (
     create_document_metadata,
     get_number_of_documents,
     list_document_metadata,
     get_document_metadata_by_id,
+    get_total_documents_uploaded_today
 )
 from src.app.db import Base, SessionLocal, engine
 from src.config import (
@@ -784,6 +786,62 @@ async def admin_overview_api(request: Request):
     finally:
         db.close()
 
+@cl.server.app.get("/api/admin/dashboard-stats")
+async def admin_dashboard_stats_api(request: Request):
+    db: Session = SessionLocal()
+    try:
+        user = _require_admin_user(request, db)
+        if not user:
+            return JSONResponse(
+                content={"message": "Bạn không có quyền truy cập trang này."},
+                status_code=403,
+            )
+ 
+        # ── Tổng quan (all-time) ──────────────────────────────
+        total_users        = get_number_of_users(db)
+        active_users       = get_number_of_active_users(db)
+        total_documents    = get_number_of_documents(db, include_deleted=False)
+        total_conversations = get_number_of_conversations(db)
+ 
+        # ── Hôm nay ──────────────────────────────────────────
+        new_users_today    = get_total_users_today(db)
+        messages_today     = get_total_messages_today(db)
+        convs_today        = get_total_conversations_today(db)
+        docs_today         = get_total_documents_uploaded_today(db)
+ 
+        # ── Hiệu suất ─────────────────────────────────────────
+        avg_response_ms    = get_average_response_time(db)          # milliseconds, float
+        avg_msg_per_conv   = get_average_message_per_conversation(db)  # float
+ 
+        # ── Live chart: messages/user theo giờ hôm nay ────────
+        # get_messages_by_hour_today trả về list[{"hour": int, "count": int}]
+        # Đảm bảo đủ 24 giờ (giờ không có message sẽ là 0)
+        raw_hours = get_messages_by_hour_today(db)
+        hour_map  = {item["hour"]: item["count"] for item in raw_hours}
+        messages_by_hour = [
+            {"hour": h, "count": hour_map.get(h, 0)}
+            for h in range(24)
+        ]
+ 
+        return JSONResponse(content={
+            # all-time
+            "total_users":         total_users,
+            "active_users":        active_users,
+            "total_documents":     total_documents,
+            "total_conversations": total_conversations,
+            # today
+            "new_users_today":     new_users_today,
+            "messages_today":      messages_today,
+            "conversations_today": convs_today,
+            "docs_today":          docs_today,
+            # performance
+            "avg_response_ms":     round(avg_response_ms or 0, 1),
+            "avg_msg_per_conv":    round(avg_msg_per_conv or 0, 1),
+            # chart
+            "messages_by_hour":    messages_by_hour,
+        })
+    finally:
+        db.close()
 
 @cl.server.app.get("/api/admin/documents")
 async def list_documents_api(request: Request, query: str = "", include_deleted: int = 0):

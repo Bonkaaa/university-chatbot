@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from ..models import Message
+from datetime import datetime, timedelta
 
 def create_message(db: Session, conversation_id: int, user_id: int | None, role: str, content: str, response_time: int | None = None) -> Message:
     max_seq = db.query(func.max(Message.sequence_no)).filter(Message.conversation_id == conversation_id).scalar()
@@ -55,3 +56,33 @@ def get_average_message_per_conversation(db: Session):
 def get_average_response_time(db: Session):
     average = db.query(func.avg(Message.response_time)).filter(Message.role == 'assistant').scalar()
     return float(average) if average is not None else 0.0
+
+def get_messages_by_hour_today(db: Session) -> list[dict[str, int]]:
+    today_start = datetime.combine(datetime.today(), datetime.min.time())
+    today_end = today_start + timedelta(days=1)
+
+    messages_by_hour = (
+        db.query(
+            func.extract('hour', Message.created_at).label('hour'),
+            func.count(Message.id).label('count')
+        )
+        .filter(Message.created_at >= today_start, Message.created_at < today_end)
+        .group_by(func.extract('hour', Message.created_at))
+        .order_by(func.extract('hour', Message.created_at))
+        .all()
+    )
+
+    # Convert to a dictionary with hour as key and message_count as value
+    return [{ "hour": int(hour), "count": count } for hour, count in messages_by_hour]
+
+def get_total_messages_today(db: Session) -> int:
+    today_start = datetime.combine(datetime.today(), datetime.min.time())
+    today_end = today_start + timedelta(days=1)
+
+    total_messages = (
+        db.query(func.count(Message.id))
+        .filter(Message.created_at >= today_start, Message.created_at < today_end)
+        .scalar()
+    )
+
+    return total_messages or 0

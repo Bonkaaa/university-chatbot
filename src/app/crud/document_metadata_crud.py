@@ -50,3 +50,9 @@ def remove_document_metadata(db: Session, metadata: DocumentMetadata) -> Documen
     db.commit()
     db.refresh(metadata)
     return metadata
+
+def get_total_documents_uploaded_today(db: Session) -> int:
+    from datetime import datetime, timedelta
+    today_start = datetime.combine(datetime.today(), datetime.min.time())
+    today_end = today_start + timedelta(days=1)
+    return db.query(DocumentMetadata).filter(DocumentMetadata.uploaded_at >= today_start, DocumentMetadata.uploaded_at < today_end).count()

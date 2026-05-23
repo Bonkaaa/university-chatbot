@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from ..models import User
 import uuid
 from sqlalchemy import or_
+from datetime import datetime, timedelta
 
 def get_user_by_email(db: Session, email: str) -> User:
     return db.query(User).filter(User.email == email).first()
@@ -60,3 +61,8 @@ def list_users(
     elif active == "inactive":
         q = q.filter(User.is_active.is_(False))
     return q.order_by(User.created_at.desc()).all()
+
+def get_total_users_today(db: Session) -> int:
+    today_start = datetime.combine(datetime.today(), datetime.min.time())
+    today_end = today_start + timedelta(days=1)
+    return db.query(User).filter(User.created_at >= today_start, User.created_at < today_end).count()
