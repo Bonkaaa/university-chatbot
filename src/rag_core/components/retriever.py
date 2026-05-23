@@ -21,6 +21,8 @@ from .data_ingestion.document_loaders import UniversityDocumentLoader
 from .data_ingestion.text_splitter import create_splitter
 from ..utils import setup_logger
 from ...config import CHROMA_DB_DIR, EMBEDDING_CACHE_DIR, RAW_DOCS_DIR
+from src.app.db import SessionLocal
+from src.app.models import DocumentChunk
 
 import pickle
 
@@ -87,6 +89,55 @@ class RetrieverComponent:
         )
 
         logger.info(f"Index synchronization completed. Stats: {index_stats}")
+
+        # Persist document chunk records for provenance/linking
+        try:
+            db = SessionLocal()
+            for d in docs:
+                meta = d.metadata or {}
+                doc_id = meta.get("document_id") if isinstance(meta, dict) else None
+                if not doc_id:
+                    # try to extract from source
+                    source = meta.get("source") if isinstance(meta, dict) else None
+                    if source:
+                        fname = os.path.basename(source)
+                        m = None
+                        try:
+                            import re
+                            m = re.match(r'^([0-9a-fA-F-]{36})_', os.path.splitext(fname)[0])
+                        except Exception:
+                            m = None
+                        if m:
+                            doc_id = m.group(1)
+
+                if not doc_id:
+                    continue
+
+                chunk_index = meta.get("chunk_index", 0) if isinstance(meta, dict) else 0
+
+                # Skip if already exists
+                exists = db.query(DocumentChunk).filter_by(document_id=doc_id, chunk_index=chunk_index).first()
+                if exists:
+                    continue
+
+                record = DocumentChunk(
+                    document_id=doc_id,
+                    chunk_index=chunk_index,
+                    source=meta.get("source") if isinstance(meta, dict) else None,
+                    chuong=meta.get("chuong") if isinstance(meta, dict) else None,
+                    dieu=meta.get("dieu") if isinstance(meta, dict) else None,
+                    content=d.page_content if hasattr(d, 'page_content') else None,
+                    external_vector_id=None,
+                )
+                db.add(record)
+            db.commit()
+        except Exception:
+            logger.exception("Failed to persist document chunk records")
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
 
         return vector_store
     

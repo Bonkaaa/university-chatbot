@@ -25,3 +25,6 @@ EXPOSE 7860
 
 # Lệnh chạy Chainlit
 CMD ["bash", "-c", "bash scripts/setup.sh && bash scripts/run.sh"]
+
+# $env:PYTHONPATH = "C:\university_chatbot" 
+# chainlit run src\main.py -w

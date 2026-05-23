@@ -6,6 +6,7 @@ import subprocess
 import time
 from pathlib import Path
 from urllib.parse import unquote
+from datetime import datetime
 
 import chainlit as cl
 from dotenv import load_dotenv
@@ -20,14 +21,30 @@ from src.agent import RAGAgent
 from src.app.core.security import hash_password, verify_password
 from src.app.core import LocalPublicStorageClient
 from src.app.models.document_metadata import DocumentMetadata
+from src.app.models.document_chunk import DocumentChunk
+from src.app.models.user import User
 # from src.app.models.user import User
 # from src.app.models.conversation import Conversation
 # from src.app.models.message import Message
 # from src.app.models.session import Session
 from src.app.crud.conversation_crud import create_conversation, list_conversations_for_user
 from src.app.crud.message_crud import create_message, list_assistant_messages
-from src.app.crud.user_crud import create_user, get_user_by_email, get_user_by_id, update_user
-from src.app.crud.document_metadata_crud import create_document_metadata
+from src.app.crud.user_crud import (
+    create_user,
+    get_user_by_email,
+    get_user_by_id,
+    update_user,
+    get_number_of_users,
+    get_number_of_active_users,
+    list_users,
+    deactivate_user,
+)
+from src.app.crud.document_metadata_crud import (
+    create_document_metadata,
+    get_number_of_documents,
+    list_document_metadata,
+    get_document_metadata_by_id,
+)
 from src.app.db import Base, SessionLocal, engine
 from src.config import (
     CONVERSATION_DB_DIR,
@@ -44,6 +61,7 @@ from src.ui import (
     build_register_html,
     build_admin_upload_html,
     build_admin_dashboard_html,
+    build_react_page_html,
 )
 from src.rag_core.utils import setup_logger
 
@@ -228,12 +246,20 @@ def _current_user_info_from_cookies(request: Request) -> tuple[str, str] | tuple
 
     try: 
         decoded_token = _decode_and_verify_jwt(token)
-        user_id = decoded_token.get("metadata", {}).get("user_id")
-        email = decoded_token.get("metadata", {}).get("email") or decoded_token.get("sub")
-        if isinstance(email, str) and isinstance(user_id, (str, int)):
-            return user_id, email.strip().lower()
-        logger.warning("Invalid email or user_id from token. email=%s, user_id=%s", email, user_id)
-        return None, None
+        metadata = decoded_token.get("metadata", {}) or {}
+        user_id = metadata.get("user_id")
+        email = metadata.get("email") or decoded_token.get("sub")
+
+        normalized_email = email.strip().lower() if isinstance(email, str) and email.strip() else None
+        normalized_user_id = user_id if isinstance(user_id, (str, int)) else None
+
+        if normalized_user_id is None and isinstance(decoded_token.get("sub"), str) and decoded_token.get("sub").isdigit():
+            normalized_user_id = int(decoded_token.get("sub"))
+
+        if normalized_user_id is None and normalized_email is None:
+            logger.warning("Invalid token payload. email=%s, user_id=%s", email, user_id)
+            return None, None
+        return normalized_user_id, normalized_email
     except Exception as e:
         logger.error("Error occurred while decoding JWT token: %s", repr(e))
         return None, None
@@ -348,7 +374,7 @@ async def get_me(request: Request):
 
 @cl.server.app.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
-    return HTMLResponse(content=build_register_html())
+    return HTMLResponse(content=build_react_page_html("Đăng ký", "register"))
 
 
 @cl.server.app.post("/register")
@@ -361,16 +387,15 @@ async def process_register(
     try:
         normalized_email, validation_error = validate_register_input(email, password, display_name)
         if validation_error:
-            return HTMLResponse(
-                content=build_register_html(validation_error, kind="error")
+            return JSONResponse(
+                content={"status": "error", "message": validation_error},
+                status_code=400,
             )
 
         if get_user_by_email(db, normalized_email):
-            return HTMLResponse(
-                content=build_register_html(
-                    "Email đã tồn tại. Vui lòng dùng email khác.",
-                    kind="error",
-                )
+            return JSONResponse(
+                content={"status": "error", "message": "Email đã tồn tại. Vui lòng dùng email khác."},
+                status_code=400,
             )
 
         create_user(
@@ -379,12 +404,7 @@ async def process_register(
             password_hash=hash_password(password),
             display_name=display_name.strip(),
         )
-        return HTMLResponse(
-            content=build_register_html(
-                "Đăng ký thành công. Hãy quay lại trang đăng nhập.",
-                kind="success",
-            )
-        )
+        return JSONResponse(content={"status": "success", "message": "Đăng ký thành công. Hãy quay lại trang đăng nhập."})
     finally:
         db.close()
 
@@ -396,6 +416,8 @@ async def auth_callback(username: str, password: str):
     try:
         user_obj = get_user_by_email(db, username.strip().lower())
         if not user_obj:
+            return None
+        if not user_obj.is_active:
             return None
         if not verify_password(password, user_obj.password_hash):
             return None
@@ -416,28 +438,14 @@ async def auth_callback(username: str, password: str):
 ## Profile routes
 @cl.server.app.get("/profile", response_class=HTMLResponse)
 async def profile_page(request: Request):
-    user_id, email = _current_user_info_from_cookies(request)
-
-    if not user_id and not email:
-        return HTMLResponse(build_error_html("Không xác định được người dùng. Vui lòng đăng nhập lại."))
-    elif user_id:
-        db: Session = SessionLocal()
-        try:
-            u = get_user_by_id(db, user_id)
-            if not u:
-                return HTMLResponse(build_error_html("Không tìm thấy tài khoản."))
-            return HTMLResponse(build_profile_html(u.id, u.email, u.display_name or ""))
-        finally:
-            db.close()
-    else:  # email có nhưng user_id không có -> fallback tìm bằng email
-        db: Session = SessionLocal()
-        try:
-            u = get_user_by_email(db, email.strip().lower())
-            if not u:
-                return HTMLResponse(build_error_html("Không tìm thấy tài khoản."))
-            return HTMLResponse(build_profile_html(u.id, u.email, u.display_name or ""))
-        finally:
-            db.close()
+    db: Session = SessionLocal()
+    try:
+        user = _resolve_current_user(request, db)
+        if not user:
+            return RedirectResponse(url="/")
+    finally:
+        db.close()
+    return HTMLResponse(content=build_react_page_html("Hồ sơ", "profile"))
 
 @cl.server.app.post("/profile")
 async def profile_update(email: str = Form(...), display_name: str = Form(...)):
@@ -445,11 +453,11 @@ async def profile_update(email: str = Form(...), display_name: str = Form(...)):
     try:
         u = get_user_by_email(db, email.strip().lower())
         if not u:
-            return HTMLResponse(build_error_html("Không tìm thấy tài khoản."))
+            return JSONResponse(content={"status": "error", "message": "Không tìm thấy tài khoản."})
             
         new_name = display_name.strip()
         if not new_name:
-            return HTMLResponse(build_error_html("Tên hiển thị không được để trống."))
+            return JSONResponse(content={"status": "error", "message": "Tên hiển thị không được để trống."})
 
         # Cập nhật DB
         update_user(db, u, display_name=new_name)
@@ -463,28 +471,14 @@ async def profile_update(email: str = Form(...), display_name: str = Form(...)):
 # Change password routes
 @cl.server.app.get("/change-password", response_class=HTMLResponse)
 async def change_password_page(request: Request):
-    user_id, email = _current_user_info_from_cookies(request)
-
-    if not user_id and not email:
-        return HTMLResponse(build_error_html("Không xác định được người dùng. Vui lòng đăng nhập lại."))
-    elif user_id:
-        db: Session = SessionLocal()
-        try:
-            u = get_user_by_id(db, user_id)
-            if not u:
-                return HTMLResponse(build_error_html("Không tìm thấy tài khoản."))
-            return HTMLResponse(build_change_password_html(u.id, u.email))
-        finally:
-            db.close()
-    else:  # email có nhưng user_id không có -> fallback tìm bằng email
-        db: Session = SessionLocal()
-        try:
-            u = get_user_by_email(db, email.strip().lower())
-            if not u:
-                return HTMLResponse(build_error_html("Không tìm thấy tài khoản."))
-            return HTMLResponse(build_change_password_html(u.id, u.email))
-        finally:
-            db.close()
+    db: Session = SessionLocal()
+    try:
+        user = _resolve_current_user(request, db)
+        if not user:
+            return RedirectResponse(url="/")
+    finally:
+        db.close()
+    return HTMLResponse(content=build_react_page_html("Đổi mật khẩu", "change-password"))
 
 
 @cl.server.app.post("/change-password")
@@ -514,8 +508,94 @@ async def change_password(
         db.commit()
 
         return JSONResponse(content={"status": "success", "message": "Đổi mật khẩu thành công!"})
-    except Exception as e:
-        return HTMLResponse(build_error_html("Có lỗi xảy ra, vui lòng thử lại."))
+    except Exception:
+        return JSONResponse(content={"status": "error", "message": "Có lỗi xảy ra, vui lòng thử lại."}, status_code=500)
+    finally:
+        db.close()
+
+
+def _resolve_current_user(request: Request, db: Session) -> User | None:
+    user_id, email = _current_user_info_from_cookies(request)
+    if user_id is None and not email:
+        return None
+    if user_id is not None:
+        try:
+            by_id = get_user_by_id(db, int(user_id))
+            if by_id and by_id.is_active:
+                return by_id
+        except (TypeError, ValueError):
+            pass
+    if email:
+        user = get_user_by_email(db, email.strip().lower())
+        if user and user.is_active:
+            return user
+    return None
+
+
+def _require_admin_user(request: Request, db: Session) -> User | None:
+    user = _resolve_current_user(request, db)
+    if not user or user.role != "admin":
+        return None
+    return user
+
+
+@cl.server.app.get("/api/profile")
+async def get_profile_api(request: Request):
+    db: Session = SessionLocal()
+    try:
+        user = _resolve_current_user(request, db)
+        if not user:
+            return JSONResponse(content={"message": "Vui lòng đăng nhập lại."}, status_code=401)
+        return JSONResponse(
+            content={
+                "id": user.id,
+                "email": user.email,
+                "display_name": user.display_name or "",
+                "role": user.role,
+                "is_active": user.is_active,
+            }
+        )
+    finally:
+        db.close()
+
+
+@cl.server.app.patch("/api/profile")
+async def patch_profile_api(request: Request):
+    payload = await request.json()
+    new_name = (payload.get("display_name") or "").strip()
+    if not new_name:
+        return JSONResponse(content={"message": "Tên hiển thị không được để trống."}, status_code=400)
+
+    db: Session = SessionLocal()
+    try:
+        user = _resolve_current_user(request, db)
+        if not user:
+            return JSONResponse(content={"message": "Vui lòng đăng nhập lại."}, status_code=401)
+        update_user(db, user, display_name=new_name)
+        return JSONResponse(content={"status": "success", "message": "Cập nhật tên hiển thị thành công."})
+    finally:
+        db.close()
+
+
+@cl.server.app.post("/api/change-password")
+async def change_password_api(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+):
+    db: Session = SessionLocal()
+    try:
+        user = _resolve_current_user(request, db)
+        if not user:
+            return JSONResponse(content={"status": "error", "message": "Vui lòng đăng nhập lại."}, status_code=401)
+        if not verify_password(current_password, user.password_hash):
+            return JSONResponse(content={"status": "error", "message": "Mật khẩu hiện tại không chính xác."})
+        _, validation_error = validate_register_input(user.email, new_password, user.display_name or "User")
+        if validation_error:
+            return JSONResponse(content={"status": "error", "message": validation_error})
+        user.password_hash = hash_password(new_password)
+        db.commit()
+        return JSONResponse(content={"status": "success", "message": "Đổi mật khẩu thành công!"})
     finally:
         db.close()
 
@@ -560,7 +640,22 @@ def _prioritize_register_route() -> None:
     routes = cl.server.app.router.routes
 
     # Các đường dẫn cần ưu tiên để tránh catch-all của Chainlit trả về trang chính
-    promote_paths = {"/register", "/profile", "/change-password", "/admin", "/admin/upload", "/api/me"}
+    promote_paths = {
+        "/register",
+        "/profile",
+        "/change-password",
+        "/admin",
+        "/admin/upload",
+        "/admin/users",
+        "/api/me",
+        "/api/profile",
+        "/api/change-password",
+        "/api/admin/overview",
+        "/api/admin/documents",
+        "/api/admin/documents/{doc_id}",
+        "/api/admin/users",
+        "/api/admin/users/{user_id}/active",
+    }
 
     promoted = []
     remaining = []
@@ -589,68 +684,67 @@ def _prioritize_register_route() -> None:
 ## Admin dashboard route
 @cl.server.app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard_page(request: Request):
-    user_id, email = _current_user_info_from_cookies(request)
-    if not user_id and not email:
-        return HTMLResponse(build_error_html("Không xác định được người dùng. Vui lòng đăng nhập lại."))
-    
     db: Session = SessionLocal()
     try:
-        user = get_user_by_id(db, user_id) if user_id else get_user_by_email(db, email.strip().lower())
-
-        if not user or user.role != "admin":
-            return HTMLResponse(build_error_html("Bạn không có quyền truy cập trang này."))
-        return HTMLResponse(build_admin_dashboard_html(user.display_name or user.email))
+        user = _require_admin_user(request, db)
+        if not user:
+            return RedirectResponse(url="/")
     finally:
         db.close()
+    return HTMLResponse(content=build_react_page_html("Admin Dashboard", "admin-dashboard"))
 
         
 ## Admin upload document route
 @cl.server.app.get("/admin/upload", response_class=HTMLResponse)
 async def admin_upload_page(request: Request):
-    user_id, email = _current_user_info_from_cookies(request)
-    if not user_id and not email:
-        return HTMLResponse(build_error_html("Không xác định được người dùng. Vui lòng đăng nhập lại."))
-    
     db: Session = SessionLocal()
     try:
-        user = get_user_by_id(db, user_id) if user_id else get_user_by_email(db, email.strip().lower())
-
-        if not user or user.role != "admin":
-            return HTMLResponse(build_error_html("Bạn không có quyền truy cập trang này."))
-        return HTMLResponse(build_admin_upload_html())
+        user = _require_admin_user(request, db)
+        if not user:
+            return RedirectResponse(url="/")
     finally:
         db.close()
+    return HTMLResponse(content=build_react_page_html("Quản lý tài liệu", "admin-documents"))
+
+
+@cl.server.app.get("/admin/users", response_class=HTMLResponse)
+async def admin_users_page(request: Request):
+    db: Session = SessionLocal()
+    try:
+        user = _require_admin_user(request, db)
+        if not user:
+            return RedirectResponse(url="/")
+    finally:
+        db.close()
+    return HTMLResponse(content=build_react_page_html("Quản lý người dùng", "admin-users"))
 
 @cl.server.app.post("/admin/upload", response_class=HTMLResponse)
 async def admin_upload_document(request: Request, file: UploadFile = File(...)):
-    user_id, email = _current_user_info_from_cookies(request)
-    if not user_id and not email:
-        return HTMLResponse(build_error_html("Không xác định được người dùng. Vui lòng đăng nhập lại."))
-    
     db: Session = SessionLocal()
     try:
-        user = get_user_by_id(db, user_id) if user_id else get_user_by_email(db, email.strip().lower())
-
-        if not user or user.role != "admin":
-            return HTMLResponse(build_error_html("Bạn không có quyền truy cập trang này."))
+        user = _require_admin_user(request, db)
+        if not user:
+            return JSONResponse(content={"message": "Bạn không có quyền truy cập trang này."}, status_code=403)
         
         filename = (file.filename or "uploaded_file").strip().replace(" ", "_")
         if not filename:
-            return HTMLResponse(build_admin_upload_html("Tên file không hợp lệ.", kind="error"))
+            return JSONResponse(content={"message": "Tên file không hợp lệ."}, status_code=400)
         
         ext = os.path.splitext(filename)[1].lower()
 
-        if ext not in [".pdf", ".md", "docx"]:
-            return HTMLResponse(build_admin_upload_html("Định dạng file không được hỗ trợ. Vui lòng tải lên file PDF, Markdown (.md), hoặc Word (.docx).", kind="error"))
+        if ext not in [".pdf", ".md", ".docx"]:
+            return JSONResponse(content={"message": "Định dạng file không được hỗ trợ. Chỉ nhận .pdf, .md, .docx."}, status_code=400)
         
         os.makedirs(RAW_DOCS_DIR, exist_ok=True)
-        save_path = os.path.join(RAW_DOCS_DIR, f"{uuid.uuid4()}_{filename}")
+        # Generate a single UUID to use for both the saved filename and the DB record
+        doc_uuid = uuid.uuid4()
+        save_path = os.path.join(RAW_DOCS_DIR, f"{doc_uuid}_{filename}")
 
         content = await file.read()
         with open(save_path, "wb") as f:
             f.write(content)
 
-        # Save metadata to DB
+        # Save metadata to DB (use same UUID so loader can link chunks back to this row)
         create_document_metadata(
             db=db,
             title=os.path.splitext(filename)[0],
@@ -658,6 +752,7 @@ async def admin_upload_document(request: Request, file: UploadFile = File(...)):
             file_type=ext,
             file_size=len(content),
             uploaded_by=user.id,
+            id=doc_uuid,
         )
 
         # Run document loaders to process the newly uploaded document and add to vector store
@@ -667,10 +762,150 @@ async def admin_upload_document(request: Request, file: UploadFile = File(...)):
         subprocess.run(["python", "-m", "src.rag_core.components.retriever"], check=True)
 
 
-        return HTMLResponse(build_admin_upload_html("Tải lên thành công và tài liệu đã được xử lý.", kind="success"))
+        return JSONResponse(content={"status": "success", "message": "Tải lên thành công và tài liệu đã được xử lý."})
     except Exception as e:
         logger.error("Error during file upload: %s", repr(e))
-        return HTMLResponse(build_admin_upload_html("Có lỗi xảy ra trong quá trình tải lên. Vui lòng thử lại.", kind="error"))
+        return JSONResponse(content={"message": "Có lỗi xảy ra trong quá trình tải lên. Vui lòng thử lại."}, status_code=500)
+    finally:
+        db.close()
+
+
+@cl.server.app.get("/api/admin/overview")
+async def admin_overview_api(request: Request):
+    db: Session = SessionLocal()
+    try:
+        user = _require_admin_user(request, db)
+        if not user:
+            return JSONResponse(content={"message": "Bạn không có quyền truy cập trang này."}, status_code=403)
+        total_users = get_number_of_users(db)
+        total_docs = get_number_of_documents(db, include_deleted=False)
+        active_users = get_number_of_active_users(db)
+        return JSONResponse(content={"total_users": total_users, "active_users": active_users, "total_documents": total_docs})
+    finally:
+        db.close()
+
+
+@cl.server.app.get("/api/admin/documents")
+async def list_documents_api(request: Request, query: str = "", include_deleted: int = 0):
+    db: Session = SessionLocal()
+    try:
+        user = _require_admin_user(request, db)
+        if not user:
+            return JSONResponse(content={"message": "Bạn không có quyền truy cập trang này."}, status_code=403)
+
+        rows = list_document_metadata(db, query=query, include_deleted=(include_deleted == 1))
+        return JSONResponse(
+            content=[
+                {
+                    "id": str(r.id),
+                    "title": r.title,
+                    "file_name": r.file_name,
+                    "file_type": r.file_type,
+                    "file_size": r.file_size,
+                    "status": r.status,
+                    "is_deleted": r.is_deleted,
+                    "uploaded_by": r.uploaded_by,
+                    "uploaded_at": r.uploaded_at.isoformat() if r.uploaded_at else None,
+                }
+                for r in rows
+            ]
+        )
+    finally:
+        db.close()
+
+
+@cl.server.app.get("/api/admin/documents/{doc_id}")
+async def document_detail_api(request: Request, doc_id: str):
+    db: Session = SessionLocal()
+    try:
+        user = _require_admin_user(request, db)
+        if not user:
+            return JSONResponse(content={"message": "Bạn không có quyền truy cập trang này."}, status_code=403)
+        row = get_document_metadata_by_id(db, doc_id)
+        if not row:
+            return JSONResponse(content={"message": "Không tìm thấy tài liệu."}, status_code=404)
+        chunk_count = db.query(DocumentChunk).filter(DocumentChunk.document_id == row.id).count()
+        uploader = get_user_by_id(db, row.uploaded_by)
+        return JSONResponse(
+            content={
+                "id": str(row.id),
+                "title": row.title,
+                "file_name": row.file_name,
+                "file_type": row.file_type,
+                "file_size": row.file_size,
+                "status": row.status,
+                "is_deleted": row.is_deleted,
+                "uploaded_by": row.uploaded_by,
+                "uploader_name": uploader.display_name if uploader else None,
+                "created_at": row.uploaded_at.isoformat() if row.uploaded_at else None,
+                "chunk_count": chunk_count,
+            }
+        )
+    finally:
+        db.close()
+
+
+@cl.server.app.delete("/api/admin/documents/{doc_id}")
+async def delete_document_api(request: Request, doc_id: str):
+    db: Session = SessionLocal()
+    try:
+        user = _require_admin_user(request, db)
+        if not user:
+            return JSONResponse(content={"message": "Bạn không có quyền truy cập trang này."}, status_code=403)
+        row = get_document_metadata_by_id(db, doc_id)
+        if not row:
+            return JSONResponse(content={"message": "Không tìm thấy tài liệu."}, status_code=404)
+        row.is_deleted = 1
+        row.status = "deleted"
+        db.query(DocumentChunk).filter(DocumentChunk.document_id == row.id).delete(synchronize_session=False)
+        db.commit()
+        return JSONResponse(content={"status": "success", "message": "Đã xóa tài liệu."})
+    finally:
+        db.close()
+
+
+@cl.server.app.get("/api/admin/users")
+async def list_users_api(request: Request, query: str = "", role: str = "", active: str = "all"):
+    db: Session = SessionLocal()
+    try:
+        admin = _require_admin_user(request, db)
+        if not admin:
+            return JSONResponse(content={"message": "Bạn không có quyền truy cập trang này."}, status_code=403)
+        users = list_users(db, query=query, role=role, active=active)
+        return JSONResponse(
+            content=[
+                {
+                    "id": u.id,
+                    "email": u.email,
+                    "display_name": u.display_name,
+                    "role": u.role,
+                    "is_active": u.is_active,
+                    "created_at": u.created_at.isoformat() if u.created_at else None,
+                }
+                for u in users
+            ]
+        )
+    finally:
+        db.close()
+
+
+@cl.server.app.patch("/api/admin/users/{user_id}/active")
+async def toggle_user_active_api(request: Request, user_id: int):
+    payload = await request.json()
+    is_active = bool(payload.get("is_active"))
+
+    db: Session = SessionLocal()
+    try:
+        admin = _require_admin_user(request, db)
+        if not admin:
+            return JSONResponse(content={"message": "Bạn không có quyền truy cập trang này."}, status_code=403)
+        target = get_user_by_id(db, user_id)
+        if not target:
+            return JSONResponse(content={"message": "Không tìm thấy người dùng."}, status_code=404)
+        if target.id == admin.id and not is_active:
+            return JSONResponse(content={"message": "Không thể tự vô hiệu hóa tài khoản admin hiện tại."}, status_code=400)
+        update_user(db, target, is_active=is_active)
+        return JSONResponse(content={"status": "success", "message": "Cập nhật trạng thái người dùng thành công."})
     finally:
         db.close()
 

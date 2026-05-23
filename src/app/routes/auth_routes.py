@@ -10,7 +10,7 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 @router.post("/register", response_model=UserOut)
 def register(payload: RegisterIn, db: Session = Depends(get_db)):
     if get_user_by_email(db, payload.email):
-        raise HTTPException(status_code=400, detail="Email already exists")
+        raise HTTPException(status_code=400, detail="Email đã tồn tại")
     user = create_user(db, payload.email, hash_password(payload.password), payload.display_name)
     return user
 
@@ -19,5 +19,7 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
     user = get_user_by_email(db, payload.email)
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Account is inactive")
     token = create_access_token(str(user.id))
     return {"access_token": token, "token_type": "bearer"}

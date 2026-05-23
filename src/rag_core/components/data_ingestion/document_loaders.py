@@ -43,6 +43,12 @@ def process_and_chunk_hust_documents(docs: List[Document]) -> List[Document]:
     base_source = docs[0].metadata.get("source", "Unknown_Source")
     cache_file_name = os.path.splitext(os.path.basename(base_source))[0]
 
+    # Try to extract a leading UUID document id from the filename if present
+    doc_id = None
+    m = re.match(r'^([0-9a-fA-F-]{36})_', cache_file_name)
+    if m:
+        doc_id = m.group(1)
+
     # 2. TIỀN XỬ LÝ (CLEANING RÁC TỪ FILE CỦA BẠN)
     text = re.sub(r'\\s*', '', full_text)
     text = re.sub(r'--- PAGE \d+ ---', '', text)
@@ -100,6 +106,14 @@ def process_and_chunk_hust_documents(docs: List[Document]) -> List[Document]:
     )
     
     final_docs = text_splitter.split_documents(new_documents)
+
+    # Attach document_id and chunk_index metadata for provenance
+    for idx, doc in enumerate(final_docs):
+        if not isinstance(doc.metadata, dict):
+            doc.metadata = dict(doc.metadata or {})
+        if doc_id:
+            doc.metadata["document_id"] = doc_id
+        doc.metadata["chunk_index"] = idx
 
     docs_dict = [doc.model_dump() for doc in final_docs]
     
@@ -170,11 +184,23 @@ class UniversityDocumentLoader:
                     with open(cache_file_path, 'r') as f:
                         cached_docs_dict = json.load(f)
                         cached_docs = [Document(**doc) for doc in cached_docs_dict]
+                        # Attach document_id from filename if missing
+                        m = re.match(r'^([0-9a-fA-F-]{36})_', os.path.splitext(file_name)[0])
+                        if m:
+                            cached_doc_id = m.group(1)
+                            for d in cached_docs:
+                                if not isinstance(d.metadata, dict):
+                                    d.metadata = dict(d.metadata or {})
+                                if "document_id" not in d.metadata:
+                                    d.metadata["document_id"] = cached_doc_id
                         all_documents.extend(cached_docs)
                 
                 else:
                     # Load từng file (docs lúc này đang bị chia theo TRANG)
                     raw_docs = self.load_file(file_path)
+                    # Extract document_id from filename if present and attach to raw docs
+                    m = re.match(r'^([0-9a-fA-F-]{36})_', os.path.splitext(file_name)[0])
+                    raw_doc_id = m.group(1) if m else None
                 
                     # Nếu là file PDF quy chế, đưa qua bộ lọc Regex
                     if file_name.endswith(".pdf"):
@@ -182,6 +208,11 @@ class UniversityDocumentLoader:
                         all_documents.extend(processed_docs)
                     else:
                         # Các file khác giữ nguyên hoặc dùng RecursiveCharacterTextSplitter cơ bản
+                        if raw_doc_id:
+                            for d in raw_docs:
+                                if not isinstance(d.metadata, dict):
+                                    d.metadata = dict(d.metadata or {})
+                                d.metadata["document_id"] = raw_doc_id
                         all_documents.extend(raw_docs)
 
         return all_documents

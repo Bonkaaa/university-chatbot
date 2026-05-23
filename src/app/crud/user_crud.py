@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from ..models import User
 import uuid
+from sqlalchemy import or_
 
 def get_user_by_email(db: Session, email: str) -> User:
     return db.query(User).filter(User.email == email).first()
@@ -30,3 +31,32 @@ def update_user(db: Session, user: User, display_name: str = None, password_hash
 
 def get_number_of_users(db: Session) -> int:
     return db.query(User).count()
+
+
+def get_number_of_active_users(db: Session) -> int:
+    return db.query(User).filter(User.is_active.is_(True)).count()
+
+def deactivate_user(db: Session, user: User) -> User:
+    user.is_active = False
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def list_users(
+    db: Session,
+    query: str = "",
+    role: str = "",
+    active: str = "all",
+) -> list[User]:
+    q = db.query(User)
+    if query.strip():
+        like = f"%{query.strip()}%"
+        q = q.filter(or_(User.email.ilike(like), User.display_name.ilike(like)))
+    if role.strip():
+        q = q.filter(User.role == role.strip().lower())
+    if active == "active":
+        q = q.filter(User.is_active.is_(True))
+    elif active == "inactive":
+        q = q.filter(User.is_active.is_(False))
+    return q.order_by(User.created_at.desc()).all()
