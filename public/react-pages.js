@@ -208,38 +208,197 @@
   }
 
   /* ──────────────────────────────
+     Mini SVG Area Chart
+  ────────────────────────────── */
+  function AreaChart({ data, color = "#e8315c", height = 120 }) {
+    if (!data || data.length === 0) return null;
+    const W = 600, H = height;
+    const PAD = { top: 12, right: 8, bottom: 28, left: 32 };
+    const innerW = W - PAD.left - PAD.right;
+    const innerH = H - PAD.top - PAD.bottom;
+    const maxVal = Math.max(...data.map(d => d.count), 1);
+    const xStep = innerW / (data.length - 1);
+
+    const pts = data.map((d, i) => ({
+      x: PAD.left + i * xStep,
+      y: PAD.top + innerH - (d.count / maxVal) * innerH,
+      count: d.count,
+      hour: d.hour,
+    }));
+
+    const linePath = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+    const areaPath = linePath
+      + ` L${pts[pts.length-1].x.toFixed(1)},${(PAD.top + innerH).toFixed(1)}`
+      + ` L${pts[0].x.toFixed(1)},${(PAD.top + innerH).toFixed(1)} Z`;
+
+    // X-axis labels: every 3 hours
+    const xLabels = data.filter(d => d.hour % 3 === 0);
+
+    // Y-axis: 3 ticks
+    const yTicks = [0, Math.round(maxVal / 2), maxVal];
+
+    const gradId = "areaGrad";
+
+    return e("svg", {
+      viewBox: `0 0 ${W} ${H}`,
+      style: { width: "100%", height: H, overflow: "visible" },
+      xmlns: "http://www.w3.org/2000/svg",
+    },
+      e("defs", null,
+        e("linearGradient", { id: gradId, x1: "0", y1: "0", x2: "0", y2: "1" },
+          e("stop", { offset: "0%",   stopColor: color, stopOpacity: "0.35" }),
+          e("stop", { offset: "100%", stopColor: color, stopOpacity: "0.02" })
+        )
+      ),
+      /* grid lines */
+      yTicks.map(v =>
+        e("line", {
+          key: v,
+          x1: PAD.left, x2: W - PAD.right,
+          y1: PAD.top + innerH - (v / maxVal) * innerH,
+          y2: PAD.top + innerH - (v / maxVal) * innerH,
+          stroke: "rgba(255,255,255,0.07)", strokeDasharray: "4 3",
+        })
+      ),
+      /* area fill */
+      e("path", { d: areaPath, fill: `url(#${gradId})` }),
+      /* line */
+      e("path", { d: linePath, fill: "none", stroke: color, strokeWidth: "2", strokeLinejoin: "round", strokeLinecap: "round" }),
+      /* dots on non-zero */
+      pts.filter(p => p.count > 0).map(p =>
+        e("circle", { key: p.hour, cx: p.x, cy: p.y, r: 3, fill: color, stroke: "#161616", strokeWidth: 1.5 })
+      ),
+      /* x labels */
+      xLabels.map(d => {
+        const px = PAD.left + d.hour * xStep;
+        return e("text", {
+          key: d.hour,
+          x: px, y: H - 4,
+          textAnchor: "middle",
+          fontSize: 10,
+          fill: "rgba(255,255,255,0.35)",
+        }, `${String(d.hour).padStart(2,"0")}h`);
+      }),
+      /* y labels */
+      yTicks.map(v =>
+        e("text", {
+          key: v,
+          x: PAD.left - 6,
+          y: PAD.top + innerH - (v / maxVal) * innerH + 4,
+          textAnchor: "end",
+          fontSize: 10,
+          fill: "rgba(255,255,255,0.35)",
+        }, v)
+      )
+    );
+  }
+
+  /* ──────────────────────────────
+     Stat Card helper
+  ────────────────────────────── */
+  function StatCard({ value, label, sub, accent, i }) {
+    return e("div", { className: "card dash-stat-card", style: { "--i": i } },
+      e("div", { className: "dash-stat-icon", style: { color: accent || "var(--accent)" } }, sub),
+      e("div", { className: "stat", style: accent ? { background: `linear-gradient(135deg, #fff 30%, ${accent})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" } : {} }, value ?? "…"),
+      e("div", { className: "stat-label" }, label)
+    );
+  }
+
+  /* ──────────────────────────────
      Admin Dashboard
   ────────────────────────────── */
   function AdminDashboard() {
-    const [stats, setStats] = React.useState(null);
+    const [stats, setStats]       = React.useState(null);
+    const [hourData, setHourData] = React.useState([]);
+    const [lastUpdate, setLastUpdate] = React.useState(null);
+    const [loading, setLoading]   = React.useState(true);
+
+    const load = async () => {
+      try {
+        const data = await fetchJson("/api/admin/dashboard-stats");
+        setStats(data);
+        setHourData(data.messages_by_hour || []);
+        setLastUpdate(new Date().toLocaleTimeString("vi-VN"));
+      } catch (_) {
+        setStats(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     React.useEffect(() => {
-      fetchJson("/api/admin/overview")
-        .then(setStats)
-        .catch(() => setStats({ total_users: "-", active_users: "-", total_documents: "-" }));
+      load();
+      const id = setInterval(load, 30000); // refresh mỗi 30s
+      return () => clearInterval(id);
     }, []);
 
+    const fmt = (n) => (n == null ? "…" : Number(n).toLocaleString("vi-VN"));
+    const fmtMs = (ms) => ms == null ? "…" : ms >= 1000 ? `${(ms/1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
+
+    const totalToday = hourData.reduce((s, d) => s + d.count, 0);
+    const peakHour   = hourData.length ? hourData.reduce((a, b) => b.count > a.count ? b : a, hourData[0]) : null;
+
     return e(Wrap, { wide: true },
-      e("div", { className: "card" },
-        e("h2", null, "Admin Dashboard"),
-        e("div", { className: "nav-links" },
-          e("a", { href: "/admin/upload" }, "📄 Quản lý tài liệu"),
-          e("a", { href: "/admin/users" }, "👥 Quản lý user"),
-          e("a", { href: "/?chat=1" }, "💬 Vào chat")
+
+      /* ── Header ── */
+      e("div", { className: "card dash-header-card" },
+        e("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" } },
+          e("div", null,
+            e("h2", { style: { margin: 0 } }, "Admin Dashboard"),
+            lastUpdate ? e("div", { style: { fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" } }, `Cập nhật lúc ${lastUpdate} · tự làm mới mỗi 30s`) : null
+          ),
+          e("div", { className: "nav-links", style: { margin: 0 } },
+            e("a", { href: "/admin/upload" }, "📄 Tài liệu"),
+            e("a", { href: "/admin/users" }, "👥 Người dùng"),
+            e("a", { href: "/?chat=1" }, "💬 Chat")
+          )
         )
       ),
-      e("div", { className: "grid3" },
-        e("div", { className: "card", style: { "--i": 0 } },
-          e("div", { className: "stat" }, stats ? stats.total_users : "…"),
-          e("div", { className: "stat-label" }, "Tổng người dùng")
+
+      /* ── Stats row 1: all-time ── */
+      e("div", { style: { marginBottom: "8px", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "1px", color: "var(--text-muted)", padding: "0 4px" } }, "Tổng quan"),
+      e("div", { className: "grid4" },
+        e(StatCard, { i: 0, value: fmt(stats?.total_users),         label: "Tổng người dùng",    sub: "👤", accent: "#38bdf8" }),
+        e(StatCard, { i: 1, value: fmt(stats?.active_users),        label: "Đang hoạt động",     sub: "✅", accent: "#4ade80" }),
+        e(StatCard, { i: 2, value: fmt(stats?.total_documents),     label: "Tài liệu",           sub: "📄", accent: "#fb923c" }),
+        e(StatCard, { i: 3, value: fmt(stats?.total_conversations), label: "Tổng cuộc hội thoại",sub: "💬", accent: "#a78bfa" }),
+      ),
+
+      /* ── Stats row 2: today ── */
+      e("div", { style: { marginBottom: "8px", marginTop: "16px", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "1px", color: "var(--text-muted)", padding: "0 4px" } }, "Hôm nay"),
+      e("div", { className: "grid4" },
+        e(StatCard, { i: 0, value: fmt(stats?.messages_today),      label: "Tin nhắn gửi đến",   sub: "✉️", accent: "#e8315c" }),
+        e(StatCard, { i: 1, value: fmt(stats?.conversations_today), label: "Cuộc hội thoại mới", sub: "🗨️", accent: "#f472b6" }),
+        e(StatCard, { i: 2, value: fmt(stats?.new_users_today),     label: "User đăng ký mới",   sub: "🆕", accent: "#34d399" }),
+        e(StatCard, { i: 3, value: fmt(stats?.docs_today),          label: "Tài liệu upload",    sub: "📥", accent: "#fbbf24" }),
+      ),
+
+      /* ── Stats row 3: performance ── */
+      e("div", { style: { marginBottom: "8px", marginTop: "16px", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "1px", color: "var(--text-muted)", padding: "0 4px" } }, "Hiệu suất"),
+      e("div", { className: "grid2" },
+        e(StatCard, { i: 0, value: fmtMs(stats?.avg_response_ms),    label: "Thời gian phản hồi TB",   sub: "⚡", accent: "#38bdf8" }),
+        e(StatCard, { i: 1, value: stats?.avg_msg_per_conv != null ? Number(stats.avg_msg_per_conv).toFixed(1) : "…", label: "Tin nhắn TB / hội thoại", sub: "📊", accent: "#a78bfa" }),
+      ),
+
+      /* ── Live Chart ── */
+      e("div", { className: "card", style: { marginTop: "4px" } },
+        e("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px", flexWrap: "wrap", gap: "8px" } },
+          e("div", null,
+            e("h3", { style: { margin: 0 } }, "Tin nhắn theo giờ hôm nay"),
+            e("div", { style: { fontSize: "12px", color: "var(--text-muted)", marginTop: "3px" } },
+              peakHour && peakHour.count > 0
+                ? `Giờ cao điểm: ${String(peakHour.hour).padStart(2,"0")}:00 — ${peakHour.count} tin nhắn`
+                : "Chưa có dữ liệu hôm nay"
+            )
+          ),
+          e("div", { style: { display: "flex", alignItems: "center", gap: "8px" } },
+            e("span", { className: "badge", style: { background: "rgba(232,49,92,0.15)", border: "1px solid rgba(232,49,92,0.3)", color: "#e8315c", fontSize: "12px" } },
+              `${totalToday} tin nhắn`
+            ),
+            loading ? e("span", { style: { fontSize: "12px", color: "var(--text-muted)" } }, "⟳") : null
+          )
         ),
-        e("div", { className: "card", style: { "--i": 1 } },
-          e("div", { className: "stat" }, stats ? stats.active_users : "…"),
-          e("div", { className: "stat-label" }, "Đang hoạt động")
-        ),
-        e("div", { className: "card", style: { "--i": 2 } },
-          e("div", { className: "stat" }, stats ? stats.total_documents : "…"),
-          e("div", { className: "stat-label" }, "Tài liệu")
-        )
+        e(AreaChart, { data: hourData, color: "#e8315c", height: 140 })
       )
     );
   }

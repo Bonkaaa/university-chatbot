@@ -653,6 +653,7 @@ def _prioritize_register_route() -> None:
         "/api/profile",
         "/api/change-password",
         "/api/admin/overview",
+        "/api/admin/dashboard-stats",
         "/api/admin/documents",
         "/api/admin/documents/{doc_id}",
         "/api/admin/users",
