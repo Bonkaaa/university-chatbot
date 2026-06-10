@@ -1,4 +1,4 @@
-**Quy trình để tích hợp dịch vụ gửi xe vào thẻ sinh viên.**
+**I. Quy trình để tích hợp dịch vụ gửi xe vào thẻ sinh viên.**
 
 * Bước 1 - Ban Công tác Sinh viên gửi toàn bộ danh sách các sinh viên K70 cho Trung tâm DV và HT Bách Khoa kích hoạt thẻ gửi xe (Có mã số thẻ sinh viên).
 * Bước 2 - Trung tâm dịch vụ và Hỗ trợ Bách Khoa sẽ kích hoạt toàn bộ thẻ SV để nộp tiền gửi xe.
@@ -7,7 +7,7 @@
   + Địa chỉ: phòng 101- B9 KTX, Văn phòng Trung tâm DV & HT Bách Khoa.
   + Thời gian: Giờ hành chính (Thứ Hai đến Thứ Sáu).
 
-**Nạp tiền gửi xe:**
+**II. Nạp tiền gửi xe:**
 
 1. Số tiền chuyển khoản: Sinh viên vui lòng nộp tiền vào thẻ xe đạp - xe máy, xe điện tối thiểu: 50.000 đ/lần nạp thẻ.
 

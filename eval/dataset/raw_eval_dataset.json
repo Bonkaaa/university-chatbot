@@ -1,0 +1,125 @@
+[
+  {
+    "question": "Ad ơi, em muốn xin thôi học rút hồ sơ thì nộp online qua email cho Ban Đào tạo được không ạ?",
+    "ground_truth": "Không được bạn nhé. Theo quy định, đơn xin thôi học và rút hồ sơ bắt buộc phải nộp trực tiếp tại Ban Đào tạo (phòng 202A-C1), trường không tiếp nhận online đối với loại đơn này."
+  },
+  {
+    "question": "Mình đang định gửi email cho Ban Đào tạo để hỏi thắc mắc, tiêu đề email phải ghi như thế nào cho chuẩn vậy?",
+    "ground_truth": "Tiêu đề email bạn cần soạn theo đúng cấu trúc: [Hạng mục viết tắt] Mã số sinh viên – Họ và tên. Ví dụ: [Học phí] 20211234 Nguyễn Văn A."
+  },
+  {
+    "question": "Em dùng Gmail cá nhân để gửi đơn thắc mắc học tập cho trường được không, hay bắt buộc phải dùng mail sinh viên ạ?",
+    "ground_truth": "Bạn bắt buộc phải sử dụng email do trường cấp (có đuôi @sis.hust.edu.vn) nhé. Nếu dùng các email cá nhân như Gmail hay Yahoo, trường sẽ không thể xác thực được người gửi và sẽ không giải quyết.",
+    "contexts": [
+      "Sinh viên bắt buộc phải dùng email của trường cấp khi gửi đơn và các câu hỏi, thắc mắc liên quan tới học tập. Nếu sinh viên dùng các email khác như Gmail, Yahoo mail…thì không thể xác thực được người gửi nên không đủ thông tin để giải quyết."
+    ]
+  },
+  {
+    "question": "Cho em hỏi với hệ cử nhân thì trường cho phép học chậm tiến độ tối đa là mấy kỳ ạ?",
+    "ground_truth": "Đối với các chương trình cấp bằng cử nhân, thời gian học chậm tiến độ tối đa cho phép là không được vượt quá 5 học kỳ chính bạn nhé."
+  },
+  {
+    "question": "Mọi người cho em hỏi làm đồ án tốt nghiệp cử nhân thì dưới mấy điểm là bị liệt thế ạ?",
+    "ground_truth": "Đối với học phần đồ án tốt nghiệp hoặc khóa luận tốt nghiệp cử nhân, điểm số dưới 5 sẽ bị coi là điểm liệt."
+  },
+  {
+    "question": "Em định xin rút môn trong tầm 7 tuần đầu học kỳ, nếu được duyệt thì em có phải đóng full học phí môn đó không?",
+    "ground_truth": "Nếu bạn nộp đơn đề nghị rút học phần trong 7 tuần đầu của học kỳ và được giải quyết theo nguyện vọng thì bạn chỉ phải đóng một nửa (50%) học phí của học phần đó thôi."
+  },
+  {
+    "question": "Kỳ này em tích lũy được 65 tín chỉ rồi thì trên hệ thống SIS em đang được xếp là sinh viên năm mấy ạ?",
+    "ground_truth": "Với mức 65 tín chỉ tích lũy, bạn đang nằm trong khoảng từ 64 đến 95 tín chỉ, do đó bạn sẽ được xếp trình độ là sinh viên năm thứ ba."
+  },
+  {
+    "question": "Huhu trường hợp nào thì bị dính cảnh báo học tập mức 3 vậy bot?",
+    "ground_truth": "Trường hợp áp dụng mức cảnh báo học tập mức 3 là khi sinh viên có số tín chỉ nợ đọng từ đầu khóa lớn hơn 24 tín chỉ."
+  },
+  {
+    "question": "Kỳ này em được 85 điểm rèn luyện thì tính là xếp loại gì nhỉ?",
+    "ground_truth": "Điểm rèn luyện của bạn nằm trong khoảng từ 80 đến dưới 90 điểm, nên bạn sẽ được xếp rèn luyện loại Tốt."
+  },
+  {
+    "question": "Em lỡ bị điểm rèn luyện Yếu 2 kỳ liên tiếp rồi thì có bị làm sao không ạ?",
+    "ground_truth": "Nếu bị xếp loại rèn luyện Yếu hoặc Kém trong 2 học kỳ liên tiếp, bạn sẽ bị hạn chế khối lượng đăng ký học tập, mức xử lý này tương đương với cảnh báo học tập mức 2."
+  },
+  {
+    "question": "Cho em hỏi học phí 1 tín chỉ của ngành Khoa học máy tính hệ chuẩn năm nay (2025-2026) là bao nhiêu tiền vậy?",
+    "ground_truth": "Đối với năm học 2025-2026, mức học phí của chương trình đào tạo chuẩn ngành Khoa học máy tính là 630.000 đồng/1 tín chỉ học phí."
+  },
+  {
+    "question": "Em định đăng ký học kỳ hè thì học phí tính như bình thường hay có nhân hệ số gì không ạ?",
+    "ground_truth": "Học phí học kỳ hè sẽ được tính bằng 1,5 lần mức học phí thông thường, trừ một số học phần đặc biệt do Giám đốc đại học quyết định thì mới tính như mức bình thường."
+  },
+  {
+    "question": "Dạ em là sinh viên khuyết tật thì có thuộc diện được miễn giảm học phí của trường không ạ?",
+    "ground_truth": "Có bạn nhé, sinh viên khuyết tật thuộc diện đối tượng được hưởng chính sách miễn hoàn toàn học phí."
+  },
+  {
+    "question": "Mấy môn em đăng ký học lại thì có được xét miễn giảm học phí không?",
+    "ground_truth": "Không được bạn nhé. Theo quy định, các học phần học lại không thuộc danh mục được xét miễn, giảm học phí."
+  },
+  {
+    "question": "Hạn nộp hồ sơ xin miễn giảm học phí là bao giờ thế ạ? Đầu kỳ nộp lúc nào cũng được hay sao?",
+    "ground_truth": "Bạn cần phải hoàn thành và nộp hồ sơ đề nghị miễn, giảm học phí cho Ban Công tác sinh viên trong vòng 45 ngày làm việc đầu tiên của học kỳ nhé."
+  },
+  {
+    "question": "Ad ơi, em chưa có chứng chỉ tiếng Anh thì học kỳ 1 trường xếp lớp tiếng Anh cơ sở kiểu gì ạ?",
+    "ground_truth": "Theo quy định, trường sẽ dựa vào kết quả kiểm tra tiếng Anh đầu khóa hoặc điểm thi môn tiếng Anh tốt nghiệp THPT tại năm nhập học để phân loại và xếp lớp cho bạn nhé."
+  },
+  {
+    "question": "Mình K70 ngành IT Global thì chuẩn đầu ra ngoại ngữ là tiếng gì vậy bot?",
+    "ground_truth": "Đối với chương trình Công nghệ thông tin Global ICT, ngoại ngữ chính yêu cầu để đạt chuẩn đầu ra là tiếng Anh nhé."
+  },
+  {
+    "question": "Em có bằng IELTS thì bao lâu hết hạn để được nộp xét chuẩn đầu ra ạ?",
+    "ground_truth": "Chứng chỉ tiếng Anh (như IELTS) phải được cấp trong vòng 2 năm tính đến thời điểm xét chuẩn ngoại ngữ đầu ra và còn hiệu lực tại thời điểm xét bạn nhé."
+  },
+  {
+    "question": "Kỳ vừa rồi em được GPA 3.3, rèn luyện 85 điểm thì có cơ hội được học bổng loại gì ạ?",
+    "ground_truth": "Với điểm GPA 3.3 (đạt từ 3.2 trở lên) và điểm rèn luyện 85 (đạt từ 80 điểm trở lên), bạn đủ tiêu chuẩn để được xét cấp học bổng loại Giỏi (loại B)."
+  },
+  {
+    "question": "Nếu em và một bạn nữa có cùng điểm GPA xét học bổng thì trường ưu tiên ai trước thế?",
+    "ground_truth": "Trong trường hợp điểm GPA bằng nhau, nhà trường sẽ xét ưu tiên cho sinh viên có điểm rèn luyện cao hơn để cấp học bổng."
+  },
+  {
+    "question": "Kỳ này em lỡ đăng ký có 12 tín chỉ thôi thì có được xét học bổng không ạ?",
+    "ground_truth": "Nếu bạn đăng ký ít hơn 15 tín chỉ tại học kỳ lấy điểm xét học bổng (ngoại trừ học kỳ 1 năm thứ nhất) thì bạn sẽ không được xét cấp học bổng nhé."
+  },
+  {
+    "question": "Em muốn xin giấy vay vốn ngân hàng thì đăng ký online ở đâu thế ạ?",
+    "ground_truth": "Bạn có thể đăng ký cấp giấy vay vốn ngân hàng trực tuyến trên ứng dụng eHUST hoặc thông qua hệ thống quản lý đào tạo qldt.hust.edu.vn."
+  },
+  {
+    "question": "Mình đăng ký xin giấy tờ online trên app eHUST xong thì bao lâu có và ra đâu lấy?",
+    "ground_truth": "Sau khi bạn đăng ký thành công trên eHUST, cán bộ Ban Công tác Sinh viên sẽ xử lý và trả kết quả sau 2 ngày làm việc. Bạn hãy đến Phòng 103 nhà C1 (bàn số 1) để nhận giấy tờ nhé."
+  },
+  {
+    "question": "Em thuộc diện mồ côi cả cha lẫn mẹ thì có được vay vốn ngân hàng không ạ? Hạn mức vay là bao nhiêu?",
+    "ground_truth": "Bạn hoàn toàn thuộc đối tượng được hỗ trợ vay vốn ngân hàng. Định mức vay vốn tối đa cho trường hợp của bạn là 4.000.000đ/sinh viên/tháng."
+  },
+  {
+    "question": "Mình đang học năm nhất ngành CNTT (khối STEM), muốn vay vốn ngân hàng theo chính sách STEM thì cần điều kiện gì vậy bot?",
+    "ground_truth": "Đối với sinh viên năm thứ nhất thuộc khối ngành STEM, điều kiện để được vay vốn là có 3 năm THPT đạt loại Khá hoặc các môn Toán, lý, hoá, sinh lớp 12 phải từ 8.0 trở lên."
+  },
+  {
+    "question": "Hồ sơ xin miễn giảm học phí nộp ở đâu và thời gian nộp là lúc nào thế ạ?",
+    "ground_truth": "Bạn cần nộp hồ sơ xin miễn giảm học phí trong vòng 9 tuần đầu của học kỳ, địa điểm tiếp nhận là Bàn số 2, Phòng 103 nhà C1 nhé."
+  },
+  {
+    "question": "Mỗi lần nạp tiền vào thẻ gửi xe qua hình thức chuyển khoản thì nạp tối thiểu bao nhiêu thế ạ?",
+    "ground_truth": "Khi nạp tiền vào thẻ gửi xe (xe đạp, xe máy, xe điện), bạn cần chuyển khoản nạp tối thiểu là 50.000 đồng/lần."
+  },
+  {
+    "question": "Em nạp tiền gửi xe bằng chuyển khoản mà 2 ngày rồi thẻ vẫn chưa dùng được thì phải lên đâu báo lỗi ạ?",
+    "ground_truth": "Nếu sau 02 ngày làm việc thẻ của bạn vẫn chưa sử dụng được, bạn vui lòng đến trực tiếp Văn phòng Trung tâm tại P101-B9 Ký túc xá Đại học Bách Khoa Hà Nội trong giờ hành chính để được xử lý."
+  },
+  {
+    "question": "Em đang học bằng Kỹ sư chuyên sâu đặc thù thì có được xét học bổng KKHT như hồi đại học không ạ?",
+    "ground_truth": "Học bổng khuyến khích học tập không áp dụng đối với người học (học viên) đang theo học chương trình đào tạo Kỹ sư chuyên sâu đặc thù bạn nhé."
+  },
+  {
+    "question": "Sinh viên đại học tích lũy đủ bao nhiêu tín chỉ thì mới được học vượt trước các môn của bậc Kỹ sư chuyên sâu ạ?",
+    "ground_truth": "Sinh viên cần tích lũy từ 118 tín chỉ trở lên của chương trình đào tạo cử nhân thì mới được phép học tích lũy trước tối đa 15 tín chỉ của chương trình Kỹ sư chuyên sâu đặc thù."
+  }
+]

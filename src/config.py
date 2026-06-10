@@ -38,5 +38,13 @@ DATABASE_DIR = ROOT_DIR / "database"
 PUBLIC_ROOT = ROOT_DIR / "public"
 # ----------------------------------
 
+## Evaluation
+RAW_DATASET_PATH = ROOT_DIR / "eval" / "dataset" / "raw_eval_dataset.json"
+EVAL_DATASET_PATH = ROOT_DIR / "eval" / "dataset" / "dataset_for_eval.json"
+OUTPUT_EVAL_RESULTS_PATH_CSV = ROOT_DIR / "eval" / "results" / "evaluation_results.csv"
+OUTPUT_EVAL_RESULTS_PATH_JSON = ROOT_DIR / "eval" / "results" / "evaluation_results.json"
+
+
+
 # CONFIG = "$env:PYTHONPATH = C:\university_chatbot"
 

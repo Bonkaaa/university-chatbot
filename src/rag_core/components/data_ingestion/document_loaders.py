@@ -20,7 +20,7 @@ logger = setup_logger("document_loader.log", "document_loader")
 import re
 from typing import List
 from langchain_core.documents import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter, MarkdownHeaderTextSplitter
 from pathlib import Path
 
 # Get project root directory and direct to data folder
@@ -84,12 +84,9 @@ def process_and_chunk_hust_documents(docs: List[Document]) -> List[Document]:
                 dieu_match = re.match(r'^(Điều\s+\d+\.[^\n]+)', dieu_content)
                 dieu_title_meta = dieu_match.group(1).strip() if dieu_match else "Nội dung chung"
                 
-                # Bơm metadata thẳng vào nội dung để LLM dễ đọc (Context Enrichment)
-                enriched_content = f"Tài liệu: {base_source}\nPhần: {current_chuong_meta}\nQuy định tại: {dieu_title_meta}\n\nNội dung chi tiết:\n{dieu_content}"
-                
-                # Tạo Document mới mang ngữ nghĩa hoàn chỉnh
+                # Giữ nội dung sạch, ngữ cảnh nằm ở metadata để tránh làm nhiễu LLM
                 doc = Document(
-                    page_content=enriched_content,
+                    page_content=dieu_content,
                     metadata={
                         "source": base_source,
                         "chuong": current_chuong_meta,
@@ -119,6 +116,76 @@ def process_and_chunk_hust_documents(docs: List[Document]) -> List[Document]:
     
     # Save the processed documents to a JSON file for caching and inspection
     with open(os.path.join(PROCESSED_DOCS_DIR, f"{cache_file_name}.json"), 'w') as f:
+        json.dump(docs_dict, f, ensure_ascii=False, indent=4)
+
+    return final_docs
+
+
+def process_and_chunk_markdown_documents(docs: List[Document]) -> List[Document]:
+    if not docs:
+        return []
+
+    # 1. Trích xuất thông tin định danh
+    source = docs[0].metadata.get("source", "Unknown_Source")
+    cache_file_name = os.path.splitext(os.path.basename(source))[0]
+
+    # 2. Gộp và làm sạch văn bản
+    full_text = "\n".join(doc.page_content for doc in docs)
+    text = re.sub(r'--- PAGE \d+ ---', '', full_text)
+
+    # 3. TỰ CHIA CHUNK THEO HEADING BẰNG REGEX (Pure Python)
+    # Dùng Lookahead (?=...) để cắt ngay trước các dòng bắt đầu bằng **Số.
+    split_pattern = r'(?m)^(?=\*\*(?:\d+|[A-Z]+)\.\s+)'
+    raw_chunks = re.split(split_pattern, text)
+    
+    md_docs = []
+    for chunk in raw_chunks:
+        if not chunk.strip():
+            continue
+            
+        # Tìm tiêu đề để đưa vào Metadata
+        heading_match = re.match(r'^\*\*((?:\d+|[A-Z]+)\.\s+.*?)\*\*', chunk)
+        if heading_match:
+            heading_title = heading_match.group(1).strip()
+            # Đổi **1. Text** thành chuẩn Markdown # 1. Text để LLM dễ đọc ngữ cảnh
+            # CHÚ Ý: Đã bỏ .*$ để KHÔNG ăn mất phần text đằng sau
+            clean_chunk_content = re.sub(r'^\*\*((?:\d+|[A-Z]+)\.\s+.*?)\*\*', r'# \1', chunk)
+        else:
+            heading_title = "Thông tin chung"
+            clean_chunk_content = chunk
+
+        # Gói vào Document với metadata chứa Heading
+        md_docs.append(Document(
+            page_content=clean_chunk_content.strip(),
+            metadata={"source": source, "Header_1": heading_title}
+        ))
+
+    # 4. Cắt các section quá dài bằng Recursive Splitter
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1200,
+        chunk_overlap=150,
+        separators=["\n\n", "\n", ".", " ", ""],
+    )
+    
+    # Splitter này sẽ giữ nguyên metadata Header_1 của md_docs
+    final_docs = text_splitter.split_documents(md_docs)
+
+    # 5. Xử lý Metadata hệ thống và lưu JSON
+    m = re.match(r'^([0-9a-fA-F-]{36})_', cache_file_name)
+    doc_id = m.group(1) if m else None
+
+    for idx, doc in enumerate(final_docs):
+        if not isinstance(doc.metadata, dict):
+            doc.metadata = dict(doc.metadata or {})
+        if doc_id:
+            doc.metadata["document_id"] = doc_id
+        doc.metadata["chunk_index"] = idx
+
+    # Export ra JSON
+    os.makedirs(PROCESSED_DOCS_DIR, exist_ok=True)
+    docs_dict = [doc.model_dump() for doc in final_docs]
+
+    with open(os.path.join(PROCESSED_DOCS_DIR, f"{cache_file_name}.json"), 'w', encoding='utf-8') as f:
         json.dump(docs_dict, f, ensure_ascii=False, indent=4)
 
     return final_docs
@@ -202,9 +269,12 @@ class UniversityDocumentLoader:
                     m = re.match(r'^([0-9a-fA-F-]{36})_', os.path.splitext(file_name)[0])
                     raw_doc_id = m.group(1) if m else None
                 
-                    # Nếu là file PDF quy chế, đưa qua bộ lọc Regex
+                    # Nếu là file PDF quy chế hoặc markdown, đưa qua bộ lọc chunking
                     if file_name.endswith(".pdf"):
                         processed_docs = process_and_chunk_hust_documents(raw_docs)
+                        all_documents.extend(processed_docs)
+                    elif file_name.endswith(".md"):
+                        processed_docs = process_and_chunk_markdown_documents(raw_docs)
                         all_documents.extend(processed_docs)
                     else:
                         # Các file khác giữ nguyên hoặc dùng RecursiveCharacterTextSplitter cơ bản

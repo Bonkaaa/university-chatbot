@@ -121,6 +121,7 @@ async def generate_answer_node(state: State) -> State:
                 "confidence": 0.0,
                 "intent": "unknown",
             },
+            "retrieved_contexts": [],
             "messages": delete_command + new_messages,
         }
 
@@ -166,6 +167,7 @@ async def generate_answer_node(state: State) -> State:
 
         return {
             "final_answer": response_dict,
+            "retrieved_contexts": state["retrieved_docs"],
             "messages": delete_command + new_messages,
         }
     except Exception as e:
@@ -177,6 +179,7 @@ async def generate_answer_node(state: State) -> State:
                 "follow_up_question": [],
                 "intent": "unknown",
             },
+            "retrieved_contexts": state.get("retrieved_docs", []),
             "messages": delete_command + new_messages,
         }
 

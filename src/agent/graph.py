@@ -141,6 +141,7 @@ class RAGAgent:
                     node_output = event.get("data", {}).get("output", {})
                     if isinstance(node_output, dict):
                         final_answer = node_output.get("final_answer")
+                        retrieved_contexts = node_output.get("retrieved_contexts", [])
 
             if not isinstance(final_answer, dict):
                 final_answer = {
@@ -149,9 +150,18 @@ class RAGAgent:
                     "intent": "unknown",
                 }
 
+            # Processed retrieved contexts for output by extracting page_content only
+            processed_retrieved_contexts = []
+            for doc in retrieved_contexts:
+                if isinstance(doc, Document):
+                    processed_retrieved_contexts.append(doc.page_content)
+                else:
+                    logger.warning(f"Expected Document type in retrieved contexts but got {type(doc)}. Skipping this item.")
+
             yield {
                 "type": "final",
                 "final_answer": final_answer,
+                "retrieved_contexts": processed_retrieved_contexts,
             }
 
             
