@@ -4,7 +4,7 @@ Một ứng dụng chatbot AI tiên tiến được thiết kế để hỗ tr�
 
 [Link tới website deploy](https://university-chatbot-d4di.onrender.com)
 
-!!! Hiện tại do đã xoá api keycủa LLM (Do hết tiền ạ) nên web chỉ có thể dùng làm mẫu chứ không thể dùng được chức năng Chatbot
+!!! Hiện tại do đã xoá api key của LLM (Do hết tiền ạ) nên web chỉ có thể dùng làm mẫu chứ không thể dùng được chức năng Chatbot
 
 ## ✨ Tính Năng Chính
 
@@ -268,5 +268,5 @@ Dự án này được phân phối dưới MIT License. Chi tiết vui lòng th
 
 ---
 
-**Cập nhật lần cuối**: Tháng 6, 2026  
+**Cập nhật lần cuối**: Tháng 8, 2026  
 **Phiên bản**: 1.0.1
