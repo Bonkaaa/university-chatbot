@@ -4,6 +4,8 @@ Một ứng dụng chatbot AI tiên tiến được thiết kế để hỗ tr�
 
 [Link tới website deploy](https://university-chatbot-d4di.onrender.com)
 
+!!! Hiện tại do đã xoá api keycủa LLM (Do hết tiền ạ) nên web chỉ có thể dùng làm mẫu chứ không thể dùng được chức năng Chatbot
+
 ## ✨ Tính Năng Chính
 
 - **RAG (Retrieval Augmented Generation)**: Kết hợp tìm kiếm mật độ (dense) và thưa thớt (sparse) để truy xuất thông tin chính xác.
